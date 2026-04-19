@@ -12,6 +12,7 @@ import {
   RefreshControl,
   TextInput,
   Image,
+  Linking, // For opening PDFs
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +26,7 @@ import { useCurrentOperatorId } from '@/hooks/useCurrentOperatorId';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileSummaryCard from '@/components/ProfileSummaryCard';
 import { COLORS } from '@/constants/theme';
+import * as DocumentPicker from 'expo-document-picker'; // New import for PDF upload
 
 const LOGO_IMAGE = require('@/assets/images/logo.png');
 
@@ -53,7 +55,7 @@ export default function ProfileScreen() {
   const [operator, setOperator] = useState<Operator | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0); // Index for Salary Calc
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0); 
   const router = useRouter();
 
   // --- Salary State ---
@@ -63,6 +65,11 @@ export default function ProfileScreen() {
     profTax: '200',
     transport: '800'
   });
+
+  // --- Payroll Document State ---
+  const [payrollFiles, setPayrollFiles] = useState<{name: string, url: string}[]>([]);
+  const [expandedYear, setExpandedYear] = useState<string | null>(null); // NEW: Track expanded folder
+  const [uploadingPdf, setUploadingPdf] = useState(false);
 
   const { operators, loading: operatorsLoading, refetch: operatorsRefetch } = useOperators();
   const { operatorId: currentOperatorId } = useCurrentOperatorId();
@@ -80,7 +87,7 @@ export default function ProfileScreen() {
 
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-  // --- Data Hooks (M1 to M6) ---
+  // --- Data Hooks ---
   const { records: attM1, fetchRecords: fAttM1 } = useAttendanceRecords({ operatorId: currentOperatorId || undefined, year: monthsDates[0].getFullYear(), month: monthsDates[0].getMonth() + 1 });
   const { records: attM2, fetchRecords: fAttM2 } = useAttendanceRecords({ operatorId: currentOperatorId || undefined, year: monthsDates[1].getFullYear(), month: monthsDates[1].getMonth() + 1 });
   const { records: attM3, fetchRecords: fAttM3 } = useAttendanceRecords({ operatorId: currentOperatorId || undefined, year: monthsDates[2].getFullYear(), month: monthsDates[2].getMonth() + 1 });
@@ -108,18 +115,12 @@ export default function ProfileScreen() {
     return months.map(m => {
       const workingDays = getWorkingDaysCount(m.date.getFullYear(), m.date.getMonth() + 1);
       
-      // MODIFIED: Calculate effective present days (Present = 1, Late/Permission = 1, Half-Day = 0.5)
       const present = m.att.reduce((sum, r) => {
         const dayOfWeek = new Date(r.date).getDay();
-        // Skip weekends
         if (dayOfWeek === 0 || dayOfWeek === 6) return sum;
-
         const status = (r.status || '').toLowerCase();
-        if (status === 'present' || status === 'late') {
-          return sum + 1; // Full day for Present or Late (Permission)
-        } else if (status === 'half-day' || status === 'half_day') {
-          return sum + 0.5; // Half day
-        }
+        if (status === 'present' || status === 'late') return sum + 1;
+        else if (status === 'half-day' || status === 'half_day') return sum + 0.5;
         return sum;
       }, 0);
 
@@ -128,23 +129,33 @@ export default function ProfileScreen() {
       
       return {
         label: `${monthNames[m.date.getMonth()]} ${m.date.getFullYear()}`,
+        year: m.date.getFullYear(),
+        monthNum: m.date.getMonth() + 1,
         attendance: { presentDays: present, totalDays: workingDays, attendanceRate: workingDays > 0 ? Math.round((present / workingDays) * 100) : 0 },
         overtime: { totalHours: totalOt, approvedHours: approvedOt, pendingHours: Math.max(totalOt - approvedOt, 0) }
       };
     });
   }, [attM1, attM2, attM3, attM4, attM5, attM6, otM1, otM2, otM3, otM4, otM5, otM6]);
 
-  // --- CALCULATIONS LOGIC (Linked to selectedMonthIndex) ---
+  // --- Grouping Logic for Payroll (By Year from last 2 digits) ---
+  const groupedPayroll = useMemo(() => {
+    const groups: Record<string, typeof payrollFiles> = {};
+    payrollFiles.forEach(file => {
+      const fileNameOnly = file.name.split('.').slice(0, -1).join('.');
+      const yearSuffix = fileNameOnly.slice(-2); // Get "24" or "25"
+      const fullYear = `20${yearSuffix}`;
+      if (!groups[fullYear]) groups[fullYear] = [];
+      groups[fullYear].push(file);
+    });
+    return groups;
+  }, [payrollFiles]);
+
+  // --- CALCULATIONS LOGIC ---
   const salaryCalculations = useMemo(() => {
     const grossBase = Number(salaryData.userGrossInput) || 0;
-    
-    // Pick relevant OT records based on selector
     const allOtRecords = [otM1, otM2, otM3, otM4, otM5, otM6];
     const targetOtRecords = allOtRecords[selectedMonthIndex] || [];
-
-    const approvedOtHours = targetOtRecords
-      .filter(record => record.approved === true)
-      .reduce((sum, record) => sum + Number(record.hours || 0), 0);
+    const approvedOtHours = targetOtRecords.filter(record => record.approved === true).reduce((sum, record) => sum + Number(record.hours || 0), 0);
 
     const hourlyRate = (grossBase / 30 / 8);
     const otAmount = Math.round(approvedOtHours * hourlyRate * 1.5);
@@ -186,7 +197,31 @@ export default function ProfileScreen() {
     } catch (e) { console.error(e); } finally { setLoading(false); setRefreshing(false); }
   };
 
+  // --- Fetch Payroll Documents ---
+  const fetchPayrollDocuments = async () => {
+    if (!profile?.id) return;
+    try {
+      // List all from user root to enable grouping by filename logic
+      const { data, error } = await supabase.storage.from('payroll_documents').list(profile.id, {
+        limit: 100,
+        sortBy: { column: 'name', order: 'desc' },
+      });
+      if (error) throw error;
+
+      if (data) {
+        const filesWithUrls = await Promise.all(data.map(async (file) => {
+          const { data: { publicUrl } } = supabase.storage.from('payroll_documents').getPublicUrl(`${profile.id}/${file.name}`);
+          return { name: file.name, url: publicUrl };
+        }));
+        setPayrollFiles(filesWithUrls);
+      }
+    } catch (error) {
+      console.log('Error fetching documents:', error);
+    }
+  };
+
   useEffect(() => { fetchProfile(); }, []);
+  useEffect(() => { if(profile?.id) fetchPayrollDocuments(); }, [profile?.id]);
 
   const handleSaveSalary = async () => {
     if (!operator?.id) return;
@@ -203,6 +238,28 @@ export default function ProfileScreen() {
       Alert.alert('Success', 'Profile updated with current selections.');
       setIsEditingSalary(false);
     } catch (error: any) { Alert.alert('Update Failed', error.message); }
+  };
+
+  // --- Upload PDF Logic ---
+  const handleUploadPayrollPDF = async () => {
+    if (!profile?.id) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
+      if (result.canceled) return;
+      setUploadingPdf(true);
+      const file = result.assets[0];
+      const filePath = `${profile.id}/${file.name}`;
+      
+      const formData = new FormData();
+      formData.append('file', { uri: file.uri, name: file.name, type: file.mimeType || 'application/pdf' } as any);
+
+      const { error } = await supabase.storage.from('payroll_documents').upload(filePath, formData, { cacheControl: '3600', upsert: true });
+      if (error) throw error;
+      Alert.alert('Success', 'Document uploaded successfully!');
+      fetchPayrollDocuments(); 
+    } catch (error: any) {
+      Alert.alert('Upload Failed', error.message || 'Could not upload the file.');
+    } finally { setUploadingPdf(false); }
   };
 
   const handleLogout = async () => {
@@ -224,12 +281,8 @@ export default function ProfileScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([
-      fetchProfile(), operatorsRefetch?.(),
-      fAttM1?.(), fAttM2?.(), fAttM3?.(), fAttM4?.(), fAttM5?.(), fAttM6?.(),
-      fOtM1?.(), fOtM2?.(), fOtM3?.(), fOtM4?.(), fOtM5?.(), fOtM6?.()
-    ]);
-  }, [operatorsRefetch, fAttM1, fAttM2, fAttM3, fAttM4, fOtM1, fOtM2, fOtM3, fOtM4, fAttM5, fAttM6, fOtM5, fOtM6]);
+    await Promise.all([fetchProfile(), operatorsRefetch?.(), fetchPayrollDocuments()]);
+  }, [operatorsRefetch, profile?.id]);
 
   if (loading && !refreshing) return (
     <View style={styles.loadingContainer}>
@@ -301,21 +354,15 @@ export default function ProfileScreen() {
           }}
         />
 
-        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Salary Configuration</Text></View>
+        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Salary & Payroll</Text></View>
         
         <View style={styles.salaryCard}>
-          {/* MONTH SELECTOR FOR SALARY */}
-          <Text style={styles.salaryLabel}>SELECT MONTH TO VIEW CALCULATION</Text>
+          {/* MONTH SELECTOR */}
+          <Text style={styles.salaryLabel}>SELECT MONTH</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthSelectorScroll}>
             {historyData.map((item, index) => (
-              <TouchableOpacity 
-                key={index} 
-                onPress={() => setSelectedMonthIndex(index)}
-                style={[styles.monthTab, selectedMonthIndex === index && styles.monthTabActive]}
-              >
-                <Text style={[styles.monthTabText, selectedMonthIndex === index && styles.monthTabTextActive]}>
-                  {item.label}
-                </Text>
+              <TouchableOpacity key={index} onPress={() => setSelectedMonthIndex(index)} style={[styles.monthTab, selectedMonthIndex === index && styles.monthTabActive]}>
+                <Text style={[styles.monthTabText, selectedMonthIndex === index && styles.monthTabTextActive]}>{item.label}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -323,34 +370,18 @@ export default function ProfileScreen() {
           <View style={styles.sectionDivider} />
           
           <Text style={styles.salaryLabel}>BASE INPUT</Text>
-          <TouchableOpacity 
-            onLongPress={() => !isEditingSalary && setIsEditingSalary(true)}
-            delayLongPress={600}
-            activeOpacity={0.9}
-            style={[styles.mainInputContainer, isEditingSalary && styles.mainInputContainerActive]}
-          >
+          <TouchableOpacity onLongPress={() => !isEditingSalary && setIsEditingSalary(true)} delayLongPress={600} activeOpacity={0.9} style={[styles.mainInputContainer, isEditingSalary && styles.mainInputContainerActive]}>
             <View style={styles.centerContent}>
-              <Text style={[styles.salaryLabel, { fontWeight: '800', color: isEditingSalary ? COLORS.accent : COLORS.secondary, marginBottom: 8 }]}>
-                MONTHLY GROSS BASE {isEditingSalary ? '— EDITING' : ''}
-              </Text>
-              
+              <Text style={[styles.salaryLabel, { fontWeight: '800', color: isEditingSalary ? COLORS.accent : COLORS.secondary, marginBottom: 8 }]}>MONTHLY GROSS BASE</Text>
               {isEditingSalary ? (
                 <View style={styles.largeInputGroup}>
                   <View style={styles.inputWithCurrency}>
                     <Text style={styles.currencySymbolLarge}>₹</Text>
-                    <TextInput
-                      style={styles.hugeSalaryInput}
-                      keyboardType="numeric"
-                      autoFocus
-                      selectionColor={COLORS.accent}
-                      value={salaryData.userGrossInput}
-                      onChangeText={(txt) => setSalaryData(prev => ({ ...prev, userGrossInput: txt }))}
-                    />
+                    <TextInput style={styles.hugeSalaryInput} keyboardType="numeric" autoFocus value={salaryData.userGrossInput} onChangeText={(txt) => setSalaryData(prev => ({ ...prev, userGrossInput: txt }))} />
                   </View>
                   <TouchableOpacity onPress={handleSaveSalary} style={styles.heroSaveButton} activeOpacity={0.7}>
                     <LinearGradient colors={[COLORS.accent, COLORS.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveGradient}>
-                      <Feather name="check-circle" size={20} color="#FFF" />
-                      <Text style={styles.saveButtonText}>SAVE CHANGES</Text>
+                      <Feather name="check-circle" size={20} color="#FFF" /><Text style={styles.saveButtonText}>SAVE CHANGES</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
@@ -364,54 +395,23 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <View style={styles.sectionDivider} />
-          
           <Text style={styles.salarySubHeader}>EARNINGS FOR {historyData[selectedMonthIndex]?.label.toUpperCase()}</Text>
+          <View style={styles.salaryRow}><Text style={styles.salaryLabel}>Basic (36.93%)</Text><Text style={styles.salaryValue}>₹{salaryCalculations.earnings.basic.toLocaleString()}</Text></View>
+          <View style={styles.salaryRow}><Text style={styles.salaryLabel}>HRA (18.46%)</Text><Text style={styles.salaryValue}>₹{salaryCalculations.earnings.hra.toLocaleString()}</Text></View>
+          <View style={styles.salaryRow}><Text style={styles.salaryLabel}>Conveyance (9.33%)</Text><Text style={styles.salaryValue}>₹{salaryCalculations.earnings.conveyance.toLocaleString()}</Text></View>
+          <View style={styles.salaryRow}><Text style={styles.salaryLabel}>Special Allowance (35.28%)</Text><Text style={styles.salaryValue}>₹{salaryCalculations.earnings.special.toLocaleString()}</Text></View>
           <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>Basic (36.93%)</Text>
-            <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.basic.toLocaleString()}</Text>
-          </View>
-          <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>HRA (18.46%)</Text>
-            <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.hra.toLocaleString()}</Text>
-          </View>
-          <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>Conveyance (9.33%)</Text>
-            <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.conveyance.toLocaleString()}</Text>
-          </View>
-          <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>Special Allowance (35.28%)</Text>
-            <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.special.toLocaleString()}</Text>
-          </View>
-
-          {/* DYNAMIC OT ROW */}
-          <View style={styles.salaryRow}>
-            <View>
-              <Text style={[styles.salaryLabel, { fontWeight: '700', color: COLORS.accent }]}>Overtime Amount (1.5x)</Text>
-              <Text style={{fontSize: 9, color: COLORS.secondary}}>Hours Approved: {salaryCalculations.earnings.otHours}</Text>
-            </View>
+            <View><Text style={[styles.salaryLabel, { fontWeight: '700', color: COLORS.accent }]}>Overtime Amount (1.5x)</Text><Text style={{fontSize: 9, color: COLORS.secondary}}>Hours Approved: {salaryCalculations.earnings.otHours}</Text></View>
             <Text style={[styles.salaryValue, { color: COLORS.accent, fontSize: 16 }]}>+ ₹{salaryCalculations.earnings.overtime.toLocaleString()}</Text>
           </View>
-
           <View style={styles.sectionDivider} />
-          
           <Text style={[styles.salarySubHeader, { color: COLORS.error }]}>DEDUCTIONS FOR {historyData[selectedMonthIndex]?.label.toUpperCase()}</Text>
-          <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>PF (12% of Basic)</Text>
-            <Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{salaryCalculations.deductions.pf.toLocaleString()}</Text>
-          </View>
-          <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>ESI (0.75% of Gross)</Text>
-            <Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{salaryCalculations.deductions.esi.toLocaleString()}</Text>
-          </View>
+          <View style={styles.salaryRow}><Text style={styles.salaryLabel}>PF (12% of Basic)</Text><Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{salaryCalculations.deductions.pf.toLocaleString()}</Text></View>
+          <View style={styles.salaryRow}><Text style={styles.salaryLabel}>ESI (0.75% of Gross)</Text><Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{salaryCalculations.deductions.esi.toLocaleString()}</Text></View>
           <View style={styles.salaryRow}>
             <Text style={styles.salaryLabel}>Professional Tax</Text>
             {isEditingSalary ? (
-              <TextInput
-                style={styles.salaryInput}
-                keyboardType="numeric"
-                value={salaryData.profTax}
-                onChangeText={(txt) => setSalaryData(prev => ({ ...prev, profTax: txt }))}
-              />
+              <TextInput style={styles.salaryInput} keyboardType="numeric" value={salaryData.profTax} onChangeText={(txt) => setSalaryData(prev => ({ ...prev, profTax: txt }))} />
             ) : (
               <Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{Number(salaryData.profTax).toLocaleString()}</Text>
             )}
@@ -419,17 +419,11 @@ export default function ProfileScreen() {
           <View style={styles.salaryRow}>
             <Text style={styles.salaryLabel}>Transport Charge</Text>
             {isEditingSalary ? (
-              <TextInput
-                style={styles.salaryInput}
-                keyboardType="numeric"
-                value={salaryData.transport}
-                onChangeText={(txt) => setSalaryData(prev => ({ ...prev, transport: txt }))}
-              />
+              <TextInput style={styles.salaryInput} keyboardType="numeric" value={salaryData.transport} onChangeText={(txt) => setSalaryData(prev => ({ ...prev, transport: txt }))} />
             ) : (
               <Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{Number(salaryData.transport).toLocaleString()}</Text>
             )}
           </View>
-
           <View style={styles.grossDivider} />
           <View style={styles.salaryRow}>
             <Text style={[styles.salaryLabel, { fontWeight: '800' }]}>Total Calculated Gross</Text>
@@ -437,10 +431,58 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.salaryRow}>
             <Text style={[styles.salaryLabel, { fontWeight: '800', color: COLORS.secondary }]}>Net Take-Home</Text>
-            <Text style={[styles.salaryValue, { color: '#10B981', fontSize: 20, fontWeight: '900' }]}>
-              ₹{salaryCalculations.netSalary.toLocaleString()}
-            </Text>
+            <Text style={[styles.salaryValue, { color: '#10B981', fontSize: 20, fontWeight: '900' }]}>₹{salaryCalculations.netSalary.toLocaleString()}</Text>
           </View>
+        </View>
+
+        {/* --- PAYROLL DOCUMENTS SECTION (YEAR-WISE FOLDERS) --- */}
+        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Payroll Documents</Text></View>
+        <View style={styles.salaryCard}>
+          <View style={styles.payrollHeader}>
+            <Text style={styles.salarySubHeader}>GROUPED ARCHIVE</Text>
+            <TouchableOpacity style={styles.uploadBtn} onPress={handleUploadPayrollPDF} disabled={uploadingPdf}>
+              {uploadingPdf ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="plus" size={16} color="#fff" />}
+              <Text style={styles.uploadBtnText}>Add PDF</Text>
+            </TouchableOpacity>
+          </View>
+
+          {Object.keys(groupedPayroll).length === 0 ? (
+            <View style={styles.noFilesContainer}>
+              <MaterialCommunityIcons name="folder-outline" size={40} color="#CBD5E1" />
+              <Text style={styles.noFilesText}>No documents found.</Text>
+            </View>
+          ) : (
+            Object.keys(groupedPayroll).sort().reverse().map(year => (
+              <View key={year} style={styles.yearGroupContainer}>
+                <TouchableOpacity 
+                  style={styles.yearHeaderRow} 
+                  onPress={() => setExpandedYear(expandedYear === year ? null : year)}
+                >
+                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <MaterialCommunityIcons 
+                      name={expandedYear === year ? "folder-open" : "folder"} 
+                      size={22} 
+                      color={COLORS.accent} 
+                    />
+                    <Text style={styles.yearTitleText}>Calendar Year {year}</Text>
+                  </View>
+                  <Feather name={expandedYear === year ? "chevron-up" : "chevron-down"} size={18} color={COLORS.secondary} />
+                </TouchableOpacity>
+
+                {expandedYear === year && (
+                  <View style={styles.yearFilesList}>
+                    {groupedPayroll[year].map((file, index) => (
+                      <TouchableOpacity key={index} style={styles.fileItemRow} onPress={() => Linking.openURL(file.url)}>
+                        <View style={styles.fileIconWrapper}><MaterialCommunityIcons name="file-pdf-box" size={20} color={COLORS.error} /></View>
+                        <Text style={styles.fileNameText} numberOfLines={1} ellipsizeMode="middle">{file.name}</Text>
+                        <Feather name="external-link" size={16} color={COLORS.secondary} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -503,4 +545,18 @@ const styles = StyleSheet.create({
   heroSaveButton: { width: '80%', height: 40, borderRadius: 15, overflow: 'hidden' },
   saveGradient: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   saveButtonText: { color: '#FFF', fontSize: 14, fontWeight: '800', marginLeft: 10 },
+  
+  // Year Group Styles
+  yearGroupContainer: { marginBottom: 8, borderRadius: 12, overflow: 'hidden' },
+  yearHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: '#F1F5F9', borderRadius: 10 },
+  yearTitleText: { fontSize: 14, fontWeight: '700', color: COLORS.primary, marginLeft: 10 },
+  yearFilesList: { marginTop: 8, paddingLeft: 4 },
+  payrollHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.accent, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  uploadBtnText: { color: '#fff', fontSize: 12, fontWeight: '700', marginLeft: 6 },
+  noFilesContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 30, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', borderStyle: 'dashed' },
+  noFilesText: { color: COLORS.secondary, fontSize: 12, marginTop: 8, fontWeight: '500' },
+  fileItemRow: { flexDirection: 'row', alignItems: 'center', padding: 8, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 8 },
+  fileIconWrapper: { width: 40, height: 40, borderRadius: 8, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  fileNameText: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.primary, marginRight: 10 },
 });

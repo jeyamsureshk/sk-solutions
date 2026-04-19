@@ -11,6 +11,8 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,7 +24,7 @@ import { useItems } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
 
 // --- CONFIGURATION ---
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+const GEMINI_API_KEY = "";
 interface ProductionFormProps {
   onSubmit: (data: ProductionRecordInsert) => Promise<{ success: boolean; error?: any }>;
   onCancel?: () => void;
@@ -38,7 +40,7 @@ interface BatchEntry {
   manpower: string;
   targetUnits: string;
   remarks: string;
-  planDt: string;     // NEW
+  planDt: string;      // NEW
   unplanDt: string;   // NEW
   defectQty: string;  // NEW
   models: Array<{ model: string; quantity: number | string }>;
@@ -102,6 +104,10 @@ const scrollDropdown = (direction: 'up' | 'down') => {
   const [activeEntryIndex, setActiveEntryIndex] = useState<number | null>(null);
   const [activeModelIndex, setActiveModelIndex] = useState<number | null>(null);
 
+  // --- AI ANIMATION REFS ---
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+
   // --- INITIALIZATION ---
   useEffect(() => {
     const initializeForm = async () => {
@@ -134,6 +140,45 @@ const scrollDropdown = (direction: 'up' | 'down') => {
     };
     initializeForm();
   }, []);
+
+  // --- AI ANIMATION EFFECT ---
+  useEffect(() => {
+    if (isScanning) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1000,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 0,
+            duration: 1000,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 3000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      pulseAnim.setValue(0);
+      spinAnim.setValue(0);
+    }
+  }, [isScanning, pulseAnim, spinAnim]);
+
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   // --- GEMINI AI SCANNING LOGIC ---
   const pickImageAndScan = async () => {
@@ -181,6 +226,7 @@ const scrollDropdown = (direction: 'up' | 'down') => {
             you MUST split them into separate objects in the 'items' array.
             - Match the first model to the first quantity.
             - Match the second model to the second quantity.
+            - Model name must space after RE.
         }
         The root object should look like: { "date": "YYYY-MM-DD", "entries": [...] }
         Return ONLY RAW JSON.
@@ -782,7 +828,29 @@ const scrollDropdown = (direction: 'up' | 'down') => {
         <Modal visible={isScanning} transparent={true} animationType="fade">
           <View style={styles.loadingOverlay}>
               <View style={styles.loadingBox}>
-                  <ActivityIndicator size="large" color="#7c3aed" />
+                  {/* Custom AI Animation */}
+                  <View style={styles.animationContainer}>
+                    <Animated.View style={[styles.outerRing, { transform: [{ rotate: spin }] }]} />
+                    <Animated.View
+                      style={[
+                        styles.innerCore,
+                        {
+                          opacity: pulseAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.5, 1],
+                          }),
+                          transform: [
+                            {
+                              scale: pulseAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.8, 1.2],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    />
+                  </View>
                   <Text style={styles.loadingTitle}>Analyzing Image</Text>
                   <Text style={styles.loadingSubtitle}>Gemini AI is reading your board Right...</Text>
               </View>
@@ -1234,27 +1302,58 @@ const styles = StyleSheet.create({
   // --- LOADING ---
   loadingOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingBox: {
-    backgroundColor: '#fff',
-    padding: 24,
-    borderRadius: 16,
+    backgroundColor: '#1E1E2E',
+    padding: 30,
+    borderRadius: 20,
     alignItems: 'center',
-    width: 250,
+    width: '80%',
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  animationContainer: {
+    width: 80,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  outerRing: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: 'rgba(124, 58, 237, 0.3)',
+    borderStyle: 'dashed',
+  },
+  innerCore: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#7c3aed',
+    shadowColor: '#a78bfa',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
+    elevation: 10,
   },
   loadingTitle: {
-    marginTop: 16,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#ffffff',
+    marginBottom: 8,
   },
   loadingSubtitle: {
-    marginTop: 6,
     fontSize: 14,
-    color: '#64748b',
+    color: '#a1a1aa',
     textAlign: 'center',
   },
 });

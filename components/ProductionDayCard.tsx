@@ -123,19 +123,24 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
           <View style={{ 
             width: '100%', 
             flexDirection: 'row', 
-            flexWrap: 'wrap', 
             justifyContent: 'space-between',
             marginBottom: text.trim() ? 1 : 0,
           }}>
-            {Number(record.plan_dt) > 0 && (
-              <Text style={styles.metricInlineText}>Plan DT : {record.plan_dt}m </Text>
-            )}
-            {Number(record.unplan_dt) > 0 && (
-               <Text style={styles.metricInlineText}>Unplan DT : {record.unplan_dt}m </Text>
-            )}
-            {Number(record.defect_qty) > 0 && (
-               <Text style={styles.metricInlineText}>Defect : {record.defect_qty} nos</Text>
-            )}
+            <View style={{ flex: 1, alignItems: 'flex-start' }}>
+              {Number(record.plan_dt) > 0 && (
+                <Text style={styles.metricInlineText}>Plan DT : {record.plan_dt}m</Text>
+              )}
+            </View>
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              {Number(record.unplan_dt) > 0 && (
+                 <Text style={styles.metricInlineText}>Unplan DT : {record.unplan_dt}m</Text>
+              )}
+            </View>
+            <View style={{ flex: 1, alignItems: 'flex-end' }}>
+              {Number(record.defect_qty) > 0 && (
+                 <Text style={styles.metricInlineText}>Defect : {record.defect_qty} nos</Text>
+              )}
+            </View>
           </View>
         ) : null}
 
@@ -330,7 +335,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
               </View>
               <View>
                   <Text style={styles.modalText}>Edit Entry</Text>
-                  <Text style={styles.modalSubText}>Modify quantity or remarks </Text>
+                  <Text style={styles.modalSubText}>Modify quantity or remarks h</Text>
               </View>
             </TouchableOpacity>
             
@@ -340,7 +345,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
               </View>
               <View>
                   <Text style={[styles.modalText, { color: THEME.error }]}>Delete Entry</Text>
-                  <Text style={styles.modalSubText}>This action cannot be undone </Text>
+                  <Text style={styles.modalSubText}>This action cannot be undone h</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -366,7 +371,7 @@ cardContainer: {
     borderWidth: 1, 
     borderColor: THEME.border, 
     elevation: 4, 
-    shadowColor: "#f66",      // Standard dark color for depth
+    shadowColor: "#f66",       // Standard dark color for depth
     shadowOffset: {
       width: 0,
       height: 4,                    // Pushes shadow downwards
@@ -524,7 +529,7 @@ cardContainer: {
   },
   // NEW: Inline Metric Styling
   metricInlineText: {
-    fontSize: 6,
+    fontSize: 6.3,
     fontWeight: '600',
     color: '#aab',
   },
