@@ -31,13 +31,16 @@ interface ProductionFormProps {
   onClear?: () => void;
 }
 
-// Updated interface to allow string for quantity validation (handling empty state)
+// Updated interface to include new fields
 interface BatchEntry {
   id: string;
   hour: string;
   manpower: string;
   targetUnits: string;
   remarks: string;
+  planDt: string;     // NEW
+  unplanDt: string;   // NEW
+  defectQty: string;  // NEW
   models: Array<{ model: string; quantity: number | string }>;
 }
 
@@ -56,7 +59,7 @@ export default function ProductionForm({
   const [operatorId, setOperatorId] = useState('');
   const [operatorName, setOperatorName] = useState('');
   const [team, setTeam] = useState('');
-   
+    
   // --- BATCH BODY STATE ---
   const [entries, setEntries] = useState<BatchEntry[]>([{
     id: Date.now().toString(),
@@ -64,7 +67,10 @@ export default function ProductionForm({
     manpower: '',
     targetUnits: '',
     remarks: '',
-    models: [{ model: '', quantity: '' }] // Initialize as empty string for UI
+    planDt: '',    // NEW
+    unplanDt: '',  // NEW
+    defectQty: '', // NEW
+    models: [{ model: '', quantity: '' }] 
   }]);
 
   // --- UI STATES ---
@@ -72,13 +78,10 @@ export default function ProductionForm({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [activeTimeIndex, setActiveTimeIndex] = useState<number | null>(null);
- 
-// Inside your component...
+  
 const dropdownScrollRef = useRef<ScrollView>(null);
 const [currentScrollY, setCurrentScrollY] = useState(0);
 
-// Assuming each dropdown item is roughly 50px high
-// 3 items * 50px = 150px
 const STEP_SIZE = 150; 
 
 const scrollDropdown = (direction: 'up' | 'down') => {
@@ -88,15 +91,14 @@ const scrollDropdown = (direction: 'up' | 'down') => {
       : currentScrollY + STEP_SIZE;
 
     dropdownScrollRef.current.scrollTo({ y: nextScrollY, animated: true });
-    // Note: currentScrollY will be updated by the onScroll listener below
   }
 };
-   
+    
   const { items } = useItems();
-   
+    
   const [dropdownVisible, setDropdownVisible] = useState(false);
   const [filteredItems, setFilteredItems] = useState<Item[]>([]);
-   
+    
   const [activeEntryIndex, setActiveEntryIndex] = useState<number | null>(null);
   const [activeModelIndex, setActiveModelIndex] = useState<number | null>(null);
 
@@ -166,17 +168,19 @@ const scrollDropdown = (direction: 'up' | 'down') => {
         Each item in the array should represent an hour slot and have this structure:
         {
           "date": "DD/MM/YYYY" (if visible),
-          "hour": "number" (the time not below 09:00 am, if two hours near one by one with in  one cell take second hour as hour input)
+          "hour": "number" (make the time not below 09:00 am,, if two hours near one by one with in  one cell take second hour as hour input)
           "manpower": "string",
           "targetUnits": "string"(if the value is seperate by + symbol add two value)
-          "remarks": "string",
+          "remarks": "string and if it have line break also add",
+           "planDt": "Analysis the remarks text it contain any "break,change over,meeting,arrangement,5S,offline work" make the time to planned down time (eg."Break 15 Mins" in remarks 15 to planDt)"
+           "unplanDt": "Analysis the remarks text it contain any "delay"" make the time to un planned down time (eg."Delay 15 Mins" in remarks 15 to unplanDt)"
+           "defectQty": "Analysis the remarks text it contain any "issue,fault,drv" make the quantity to defect qty (eg."2 nos cotton fault or 2 nos cotton issue" in remarks 2 to defect qty)"
           "models": [
             { "model": "string", "quantity": number }
           ] If a row contains a '+' symbol in the Model or Quantity column (e.g., "ModelA + ModelB" or "50 + 30"), 
             you MUST split them into separate objects in the 'items' array.
             - Match the first model to the first quantity.
             - Match the second model to the second quantity.
- 
         }
         The root object should look like: { "date": "YYYY-MM-DD", "entries": [...] }
         Return ONLY RAW JSON.
@@ -210,11 +214,6 @@ const scrollDropdown = (direction: 'up' | 'down') => {
       let newEntries: BatchEntry[] = [];
       const dataArray = Array.isArray(parsedData) ? parsedData : parsedData.entries || parsedData.data;
 
-      if (parsedData.date) {
-         // Basic date parsing logic here if needed
-         // setDate(parsedData.date); 
-      }
-
       if (Array.isArray(dataArray)) {
         newEntries = dataArray.map((item: any) => ({
             id: Date.now().toString() + Math.random(),
@@ -222,9 +221,12 @@ const scrollDropdown = (direction: 'up' | 'down') => {
             manpower: item.manpower?.toString() || '',
             targetUnits: item.targetUnits?.toString() || '',
             remarks: item.remarks || '',
+            planDt: item.planDt?.toString() || '',       // Added mapping fallback
+            unplanDt: item.unplanDt?.toString() || '',   // Added mapping fallback
+            defectQty: item.defectQty?.toString() || '', // Added mapping fallback
             models: Array.isArray(item.models) ? item.models.map((m: any) => ({
                 model: m.model || '',
-                quantity: m.quantity // Keep as number if coming from AI
+                quantity: m.quantity 
             })) : [{ model: '', quantity: '' }]
         }));
       }
@@ -266,6 +268,9 @@ const scrollDropdown = (direction: 'up' | 'down') => {
               manpower: '',
               targetUnits: '',
               remarks: '',
+              planDt: '',
+              unplanDt: '',
+              defectQty: '',
               models: [{ model: '', quantity: '' }]
             }]);
             if (onClear) onClear();
@@ -286,6 +291,9 @@ const scrollDropdown = (direction: 'up' | 'down') => {
       manpower: lastEntry.manpower, 
       targetUnits: '',
       remarks: '',
+      planDt: '',
+      unplanDt: '',
+      defectQty: '',
       models: [{ model: '', quantity: '' }]
     }]);
   };
@@ -324,16 +332,13 @@ const scrollDropdown = (direction: 'up' | 'down') => {
   const updateModel = (entryIndex: number, modelIndex: number, field: 'model' | 'quantity', value: any) => {
     const newEntries = [...entries];
     const models = newEntries[entryIndex].models;
-     
-    // --- UPDATED QUANTITY LOGIC START ---
+      
     if (field === 'quantity') {
-      // Allow raw input (string) to support empty state, but convert to number if possible
       models[modelIndex][field] = value; 
     } else {
       // @ts-ignore
       models[modelIndex][field] = value;
     }
-    // --- UPDATED QUANTITY LOGIC END ---
 
     setEntries(newEntries);
 
@@ -368,9 +373,8 @@ const scrollDropdown = (direction: 'up' | 'down') => {
   };
 
   // Submission
-// Updated Submission Logic
   const handleSubmitAll = async () => {
-    // 1. Validate Operator and Team (Global for the batch)
+    // 1. Validate Operator and Team
     if (!operatorName.trim() || !team.trim()) {
       Alert.alert('Error', 'Please fill in employee name and team (Profile data missing)');
       return;
@@ -382,11 +386,11 @@ const scrollDropdown = (direction: 'up' | 'down') => {
       return;
     }
 
-    // 3. Validate Each Entry in the Batch (Basic Numeric Validation)
+    // 3. Validate Each Entry
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       const entryLabel = `Entry #${i + 1} (${entry.hour}:00)`;
-       
+        
       const hourNum = parseFloat(entry.hour);
       const manpowerNum = parseInt(entry.manpower);
 
@@ -399,8 +403,6 @@ const scrollDropdown = (direction: 'up' | 'down') => {
         Alert.alert('Error', `${entryLabel}: Please enter valid manpower`);
         return;
       }
-      
-      // We removed the "model name cannot be empty" and "quantity cannot be empty" check here.
     }
 
     // 4. Process Submission
@@ -408,18 +410,15 @@ const scrollDropdown = (direction: 'up' | 'down') => {
     let errors = [];
 
     for (const entry of entries) {
-      // CLEANING LOGIC: 
-      // Filter out rows that are completely empty (no model AND no quantity)
-      // If a model is provided but quantity is empty, default to 0.
       const processedModels = entry.models
         .filter(m => m.model.trim() !== "" || m.quantity !== "") 
         .map(m => ({ 
-          model: m.model.trim() || "Unspecified", // Provide a default if name is missing
+          model: m.model.trim() || "Unspecified", 
           quantity: m.quantity === '' ? 0 : Number(m.quantity) 
         }));
 
       const totalUnits = processedModels.reduce((sum, item) => sum + item.quantity, 0);
-       
+        
       const payload: ProductionRecordInsert = {
         date: date,
         hour: parseFloat(entry.hour),
@@ -430,7 +429,11 @@ const scrollDropdown = (direction: 'up' | 'down') => {
         team: team,
         remarks: entry.remarks,
         manpower: parseInt(entry.manpower) || 0,
-        item: processedModels
+        item: processedModels,
+        // NEW FIELDS PARSED AND ADDED
+        plan_dt: entry.planDt ? parseFloat(entry.planDt) : null,
+        unplan_dt: entry.unplanDt ? parseFloat(entry.unplanDt) : null,
+        defect_qty: entry.defectQty ? parseInt(entry.defectQty) : null,
       };
 
       const result = await onSubmit(payload);
@@ -455,6 +458,9 @@ const scrollDropdown = (direction: 'up' | 'down') => {
               manpower: '',
               targetUnits: '',
               remarks: '',
+              planDt: '',
+              unplanDt: '',
+              defectQty: '',
               models: [{ model: '', quantity: '' }]
             }]);
             if (onClear) onClear();
@@ -467,7 +473,6 @@ const scrollDropdown = (direction: 'up' | 'down') => {
 
   // --- RENDER ---
   return (
-    // FIX 1: Ensure SafeAreaView takes up full screen
     <SafeAreaView style={[styles.safeArea, { flex: 1 }]}>
         
       {/* --- TOP HEADER --- */}
@@ -484,7 +489,6 @@ const scrollDropdown = (direction: 'up' | 'down') => {
         </TouchableOpacity>
       </View>
 
-      {/* FIX 2: Add flex: 1 to KeyboardAvoidingView so it fills the space properly */}
       <KeyboardAvoidingView 
         style={[styles.mainContainer, { flex: 1 }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
@@ -493,13 +497,11 @@ const scrollDropdown = (direction: 'up' | 'down') => {
         {/* --- CONTROLS HEADER --- */}
         <View style={styles.controlsHeader}>
           <View style={styles.controlRow}>
-              {/* Scan Button - Enhanced UI */}
               <TouchableOpacity style={styles.scanButton} onPress={pickImageAndScan} activeOpacity={0.8}>
                   <Camera size={20} color="#fff" />
                   <Text style={styles.scanButtonText}>AI Scan (Gemini)</Text>
               </TouchableOpacity>
 
-              {/* Date Button - Enhanced UI */}
               <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)} activeOpacity={0.8}>
                   <Text style={styles.dateButtonText}>
                   {new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -521,7 +523,6 @@ const scrollDropdown = (direction: 'up' | 'down') => {
           </View>
         </View>
 
-        {/* FIX 3: ScrollView needs flex: 1 to expand, and nestedScrollEnabled for inner lists */}
         <ScrollView 
           style={[styles.scrollContainer, { flex: 1 }]} 
           contentContainerStyle={{ paddingBottom: 120 }} 
@@ -552,20 +553,15 @@ const scrollDropdown = (direction: 'up' | 'down') => {
                       <View style={styles.inputGroup}>
                           <Text style={styles.label}>Time Slot</Text>
                          <TouchableOpacity style={styles.timeInput} onPress={() => openTimePicker(index)}>
-  {/* Wrap icon and text in a View to keep them grouped if necessary, 
-      but applying styles directly to timeInput is cleaner */}
-  <Clock size={18} color="#fff" style={{ marginRight: 8 }} />
-  <Text style={styles.timeInputValue}>
-    {new Date(`1970-01-01T${entry.hour.includes('.5') ? `${entry.hour.split('.')[0]}:30` : `${entry.hour}:00`}`)
-      .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-  </Text>
-  
-  {/* To keep the time perfectly centered, we absolute position the Chevron or remove it. 
-      If you want the Chevron to stay on the right while the text is centered: */}
-  <View style={{ position: 'absolute', right: 12 }}>
-    <ChevronDown size={16} color="#94a3b8" />
-  </View>
-</TouchableOpacity>
+                          <Clock size={18} color="#fff" style={{ marginRight: 8 }} />
+                          <Text style={styles.timeInputValue}>
+                            {new Date(`1970-01-01T${entry.hour.includes('.5') ? `${entry.hour.split('.')[0]}:30` : `${entry.hour}:00`}`)
+                              .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                          </Text>
+                          <View style={{ position: 'absolute', right: 12 }}>
+                            <ChevronDown size={16} color="#94a3b8" />
+                          </View>
+                        </TouchableOpacity>
                       </View>
 
                       {/* Manpower & Target Row */}
@@ -599,6 +595,8 @@ const scrollDropdown = (direction: 'up' | 'down') => {
                               </View>
                           </View>
                       </View>
+                      
+                      
 
                       <View style={styles.divider} />
 
@@ -628,12 +626,11 @@ const scrollDropdown = (direction: 'up' | 'down') => {
                                       />
                                       <TextInput
                                           style={[styles.baseInput, styles.qtyInput]}
-                                          value={modelItem.quantity.toString()}
+                                          value={modelItem.quantity?.toString() || ''} 
                                           placeholder="Qty"
                                           placeholderTextColor="#cbd5e1"
                                           keyboardType="number-pad"
                                           onChangeText={(text) => {
-                                              // Pass raw text to handler to allow empty string
                                               updateModel(index, mIndex, 'quantity', text);
                                           }}
                                       />
@@ -647,57 +644,55 @@ const scrollDropdown = (direction: 'up' | 'down') => {
                                   </View>
 
                                   {/* Dropdown Logic */}
-{dropdownVisible && activeEntryIndex === index && activeModelIndex === mIndex && (
-  <View style={styles.dropdownContainer}>
-    <View style={styles.dropdownWrapper}>
-      <ScrollView 
-        ref={dropdownScrollRef}
-        style={styles.dropdownScroll} 
-        nestedScrollEnabled={true} 
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        // TRACKING LOGIC START
-        onScroll={(event) => {
-          setCurrentScrollY(event.nativeEvent.contentOffset.y);
-        }}
-        scrollEventThrottle={16} // Captures scroll position smoothly
-        // TRACKING LOGIC END
-      >
-        {filteredItems.map((item, idx) => (
-          <TouchableOpacity
-            key={idx}
-            style={styles.dropdownItem}
-            onPress={() => {
-              updateModel(index, mIndex, 'model', item.model);
-              setDropdownVisible(false);
-            }}
-          >
-            <Text style={styles.dropdownText}>
-              <Text style={{fontWeight: 'bold'}}>{item.part_id}</Text> : {item.description}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+                                  {dropdownVisible && activeEntryIndex === index && activeModelIndex === mIndex && (
+                                    <View style={styles.dropdownContainer}>
+                                      <View style={styles.dropdownWrapper}>
+                                        <ScrollView 
+                                          ref={dropdownScrollRef}
+                                          style={styles.dropdownScroll} 
+                                          nestedScrollEnabled={true} 
+                                          keyboardShouldPersistTaps="handled"
+                                          showsVerticalScrollIndicator={false}
+                                          onScroll={(event) => {
+                                            setCurrentScrollY(event.nativeEvent.contentOffset.y);
+                                          }}
+                                          scrollEventThrottle={16} 
+                                        >
+                                          {filteredItems.map((item, idx) => (
+                                            <TouchableOpacity
+                                              key={idx}
+                                              style={styles.dropdownItem}
+                                              onPress={() => {
+                                                updateModel(index, mIndex, 'model', item.model);
+                                                setDropdownVisible(false);
+                                              }}
+                                            >
+                                              <Text style={styles.dropdownText}>
+                                                <Text style={{fontWeight: 'bold'}}>{item.part_id}</Text> : {item.description}
+                                              </Text>
+                                            </TouchableOpacity>
+                                          ))}
+                                        </ScrollView>
 
-      {/* Manual Scroll Controls */}
-      <View style={styles.scrollControls}>
-        <TouchableOpacity 
-          style={styles.arrowButton} 
-          onPress={() => scrollDropdown('up')}
-        >
-          <ChevronUp size={20} color="#2563eb" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.arrowButton} 
-          onPress={() => scrollDropdown('down')}
-        >
-          <ChevronDown size={20} color="#2563eb" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  </View>
-)}
+                                        {/* Manual Scroll Controls */}
+                                        <View style={styles.scrollControls}>
+                                          <TouchableOpacity 
+                                            style={styles.arrowButton} 
+                                            onPress={() => scrollDropdown('up')}
+                                          >
+                                            <ChevronUp size={20} color="#2563eb" />
+                                          </TouchableOpacity>
+                                          
+                                          <TouchableOpacity 
+                                            style={styles.arrowButton} 
+                                            onPress={() => scrollDropdown('down')}
+                                          >
+                                            <ChevronDown size={20} color="#2563eb" />
+                                          </TouchableOpacity>
+                                        </View>
+                                      </View>
+                                    </View>
+                                  )}
                               </View>
                           ))}
 
@@ -705,6 +700,48 @@ const scrollDropdown = (direction: 'up' | 'down') => {
                               <Plus size={16} color="#2563eb" />
                               <Text style={styles.addModelText}>Add Another Model</Text>
                           </TouchableOpacity>
+                      </View>
+{/* NEW SECTION: Downtime & Defects */}
+                      <View style={styles.row}>
+                          <View style={[styles.col, { marginRight: 8 }]}>
+                              <Text style={styles.label}>Plan DT</Text>
+                              <View style={styles.inputWrapper}>
+                                <TextInput 
+                                    style={styles.inputWithIcon} 
+                                    value={entry.planDt} 
+                                    onChangeText={(text) => updateEntryField(index, 'planDt', text)} 
+                                    keyboardType="numeric" 
+                                    placeholder="Min"
+                                    placeholderTextColor="#cbd5e1"
+                                />
+                              </View>
+                          </View>
+                          <View style={[styles.col, { marginRight: 8 }]}>
+                              <Text style={styles.label}>Unplan DT</Text>
+                              <View style={styles.inputWrapper}>
+                                <TextInput 
+                                    style={styles.inputWithIcon} 
+                                    value={entry.unplanDt} 
+                                    onChangeText={(text) => updateEntryField(index, 'unplanDt', text)} 
+                                    keyboardType="numeric" 
+                                    placeholder="Min"
+                                    placeholderTextColor="#cbd5e1"
+                                />
+                              </View>
+                          </View>
+                          <View style={styles.col}>
+                              <Text style={styles.label}>Defect Qty</Text>
+                              <View style={styles.inputWrapper}>
+                                <TextInput 
+                                    style={styles.inputWithIcon} 
+                                    value={entry.defectQty} 
+                                    onChangeText={(text) => updateEntryField(index, 'defectQty', text)} 
+                                    keyboardType="number-pad" 
+                                    placeholder="Qty"
+                                    placeholderTextColor="#cbd5e1"
+                                />
+                              </View>
+                          </View>
                       </View>
 
                       {/* Remarks */}
@@ -892,7 +929,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    // Soft shadow
     shadowColor: '#64748b',
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -950,15 +986,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
- timeInput: {
+  timeInput: {
     flexDirection: 'row',
-    alignItems: 'center',      // Centers vertically
-    justifyContent: 'center',   // Centers horizontally
-    backgroundColor: '#3b82f6', // Example color (since your clock is #fff)
+    alignItems: 'center',      
+    justifyContent: 'center',   
+    backgroundColor: '#3b82f6', 
     borderRadius: 8,
-    height: 40,                 // Give it a fixed height for better vertical centering
+    height: 40,                  
     paddingHorizontal: 12,
-    position: 'relative',       // Necessary if using absolute positioning for the chevron
+    position: 'relative',        
   },
   timeInputValue: {
     color: '#fff',
@@ -1026,7 +1062,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   modelRowContainer: {
-    zIndex: 20, // For Dropdown overlap
+    zIndex: 20, 
   },
   modelRow: {
     flexDirection: 'row',
@@ -1079,7 +1115,7 @@ const styles = StyleSheet.create({
   },
 
   // --- DROPDOWN ---
-dropdownContainer: {
+  dropdownContainer: {
     position: 'absolute',
     top: '100%',
     left: 0,
@@ -1093,7 +1129,7 @@ dropdownContainer: {
     borderColor: '#e5e7eb',
   },
   dropdownWrapper: {
-    flexDirection: 'row', // Places buttons next to the list
+    flexDirection: 'row', 
   },
   dropdownScroll: {
     flex: 1,
@@ -1162,7 +1198,6 @@ dropdownContainer: {
     borderTopColor: '#e2e8f0',
     flexDirection: 'row',
     gap: 12,
-    // Shadow for footer
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 3,

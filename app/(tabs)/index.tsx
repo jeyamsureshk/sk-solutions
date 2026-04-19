@@ -165,7 +165,7 @@ export default function DashboardScreen() {
         />
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>SK Solutions Global v2.0.3 h</Text>
+          <Text style={styles.footerText}>SK Solutions Global v2.0.4 h</Text>
           <Text style={styles.footerText}>
             © 2026 <Text style={styles.linkText} onPress={() => Linking.openURL('https://jeyamsureshk.netlify.app')}>SK Solutions h</Text>
           </Text>

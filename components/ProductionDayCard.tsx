@@ -77,28 +77,26 @@ function ProductionDayCard({
   const toProperCase = (text: string) => {
     if (!text) return "";
     return text.split(' ').map(word => {
-      // If word is already all caps (and longer than 1 char), skip it
       if (word.length > 1 && word === word.toUpperCase() && /[A-Z]/.test(word)) {
         return word;
       }
-      // Otherwise, lowercase everything and capitalize first letter
       return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
     }).join(' ');
   };
 
-  const to12Hour = (hour24: number, minute: number = 0) => {
-    const h = hour24 % 12 || 12; 
+ const to24Hour = (hour24: number, minute: number = 0) => {
+    const h = hour24.toString().padStart(2, '0');
     const m = minute.toString().padStart(2, '0');
     return `${h}:${m}`;
   };
 
   const getTimeRange = (hour: number) => {
     if (hour === 9 || hour === 9.0) {
-      return { start: "8:30", end: "9:00" };
+      return { start: "08:30", end: "09:00" };
     }
     const endH = Math.floor(hour);
     const startH = endH - 1;
-    return { start: to12Hour(startH), end: to12Hour(endH) };
+    return { start: to24Hour(startH), end: to24Hour(endH) };
   };
 
   const formatDate = (dateString: string) => {
@@ -111,27 +109,53 @@ function ProductionDayCard({
     }).replace(/ /g, '-');
   };
 
-  const renderRemarks = (text: string) => {
-    if (!text) return null;
+  // --- UPDATED: Render Remarks alongside Metrics (DT & Defects) ---
+const renderRemarksAndMetrics = (record: ProductionRecord) => {
+    const text = record.remarks || "";
+    const hasMetrics = Number(record.plan_dt) > 0 || Number(record.unplan_dt) > 0 || Number(record.defect_qty) > 0;
     const lines = text.split('\n');
+
     return (
-      <View style={{ width: '100%' }}>
-        {lines.map((line, index) => {
-           if (!line.trim()) return null;
-           const lower = line.toLowerCase();
-           const isError = ["problem", "issue", "fault", "delay", "missing", "damage","touch up","miss match", "shortage"].some(w => lower.includes(w));
-    // Apply the Proper Case logic here
-           const formattedLine = toProperCase(line);
-            return (
-             <Text key={index} style={[styles.tdHandwriting, { color: isError ? THEME.error : THEME.markerBlack, marginBottom: 2 }]}>
-               {formattedLine}
-             </Text>
-           );
-        })}
+      <View style={{ width: '100%', flex: 1 }}>
+        
+        {/* Render DT & Defect Text Inline at the top */}
+        {hasMetrics ? (
+          <View style={{ 
+            width: '100%', 
+            flexDirection: 'row', 
+            flexWrap: 'wrap', 
+            justifyContent: 'space-between',
+            marginBottom: text.trim() ? 1 : 0,
+          }}>
+            {Number(record.plan_dt) > 0 && (
+              <Text style={styles.metricInlineText}>Plan DT : {record.plan_dt}m </Text>
+            )}
+            {Number(record.unplan_dt) > 0 && (
+               <Text style={styles.metricInlineText}>Unplan DT : {record.unplan_dt}m </Text>
+            )}
+            {Number(record.defect_qty) > 0 && (
+               <Text style={styles.metricInlineText}>Defect : {record.defect_qty} nos</Text>
+            )}
+          </View>
+        ) : null}
+
+        {/* Render Remarks (Centered vertically in the remaining cell space) */}
+        <View style={{ flex: 1, justifyContent: 'center', paddingTop: hasMetrics ? 2 : 4 }}>
+          {lines.map((line, index) => {
+             if (!line.trim()) return null;
+             const lower = line.toLowerCase();
+             const isError = ["problem", "issue", "fault", "delay", "missing", "damage","touch up","miss match", "shortage"].some(w => lower.includes(w));
+             const formattedLine = toProperCase(line);
+             return (
+               <Text key={index} style={[styles.tdHandwriting, { color: isError ? THEME.error : THEME.markerBlack, marginBottom: 2 }]}>
+                 {formattedLine}
+               </Text>
+             );
+          })}
+        </View>
       </View>
     );
   };
-
   useEffect(() => {
     const checkOwnership = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -277,9 +301,9 @@ function ProductionDayCard({
                     <Text style={styles.tdMP}>{record.manpower}</Text>
                   </View>
 
-                  {/* 6. REMARKS */}
+                  {/* 6. REMARKS & METRICS */}
                   <View style={[styles.cell, styles.colRemarks, { borderRightWidth: 0 }]}>
-                    {renderRemarks(record.remarks || "")}
+                    {renderRemarksAndMetrics(record)}
                   </View>
                 </Pressable>
               );
@@ -306,7 +330,7 @@ function ProductionDayCard({
               </View>
               <View>
                   <Text style={styles.modalText}>Edit Entry</Text>
-                  <Text style={styles.modalSubText}>Modify quantity or remarks hhh </Text>
+                  <Text style={styles.modalSubText}>Modify quantity or remarks </Text>
               </View>
             </TouchableOpacity>
             
@@ -316,7 +340,7 @@ function ProductionDayCard({
               </View>
               <View>
                   <Text style={[styles.modalText, { color: THEME.error }]}>Delete Entry</Text>
-                  <Text style={styles.modalSubText}>This action cannot be undone hhh </Text>
+                  <Text style={styles.modalSubText}>This action cannot be undone </Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -342,7 +366,7 @@ cardContainer: {
     borderWidth: 1, 
     borderColor: THEME.border, 
     elevation: 4, 
-    shadowColor: "#f66",     // Standard dark color for depth
+    shadowColor: "#f66",      // Standard dark color for depth
     shadowOffset: {
       width: 0,
       height: 4,                    // Pushes shadow downwards
@@ -478,7 +502,7 @@ cardContainer: {
     paddingVertical: 4 
   },
 
-  // --- Typography ---
+  // --- Typography & Badges ---
   tdHour: { 
     color: THEME.primary, 
     fontSize: 10, 
@@ -497,6 +521,12 @@ cardContainer: {
   tdHandwriting: { 
     fontSize: 10, 
     lineHeight: 13 
+  },
+  // NEW: Inline Metric Styling
+  metricInlineText: {
+    fontSize: 6,
+    fontWeight: '600',
+    color: '#aab',
   },
 
   // --- Modal / Bottom Sheet ---

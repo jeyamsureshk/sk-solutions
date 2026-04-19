@@ -48,6 +48,11 @@ export default function ProductionForm({
   const [team, setTeam] = useState('');
   const [remarks, setRemarks] = useState('');
   const [manpower, setManpower] = useState('');
+  
+  // NEW: Downtime and Defect States
+  const [planDt, setPlanDt] = useState('');
+  const [unplanDt, setUnplanDt] = useState('');
+  const [defectQty, setDefectQty] = useState('');
 
   // UI States
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -72,6 +77,11 @@ export default function ProductionForm({
         setOperatorId(initialData.operator_id?.toString() || '');
         setOperatorName(initialData.operator_name || '');
         setTeam(initialData.team || '');
+        
+        // Populate new fields
+        setPlanDt(initialData.plan_dt?.toString() || '');
+        setUnplanDt(initialData.unplan_dt?.toString() || '');
+        setDefectQty(initialData.defect_qty?.toString() || '');
 
         // Retrieve JSON items array correctly
         if (initialData.item && Array.isArray(initialData.item)) {
@@ -155,6 +165,7 @@ export default function ProductionForm({
       return;
     }
 
+    // Prepare payload, parsing new fields safely
     const formData: ProductionRecordInsert = {
       date,
       hour: hourNum,
@@ -164,8 +175,12 @@ export default function ProductionForm({
       operator_name: operatorName.trim(),
       team: team.trim(),
       remarks: remarks.trim(),
-      item: models.filter(m => m.model.trim() && m.quantity > 0),
+      // Adjusted to save even if quantity is 0, as long as the model name exists
+      item: models.filter(m => m.model.trim() !== ''),
       manpower: manpowerNum,
+      plan_dt: planDt ? parseFloat(planDt) : null,
+      unplan_dt: unplanDt ? parseFloat(unplanDt) : null,
+      defect_qty: defectQty ? parseInt(defectQty) : null,
     };
 
     const result = await onSubmit(formData);
@@ -182,11 +197,17 @@ export default function ProductionForm({
     setTargetUnits('');
     setRemarks('');
     setManpower('');
+    setPlanDt('');
+    setUnplanDt('');
+    setDefectQty('');
     if (initialData) {
       setOperatorId(initialData.operator_id?.toString() || '');
       setOperatorName(initialData.operator_name || '');
       setTeam(initialData.team || '');
       setManpower(initialData.manpower?.toString() || '');
+      setPlanDt(initialData.plan_dt?.toString() || '');
+      setUnplanDt(initialData.unplan_dt?.toString() || '');
+      setDefectQty(initialData.defect_qty?.toString() || '');
     }
   };
 
@@ -262,7 +283,7 @@ export default function ProductionForm({
 
         <TextInput
           style={[styles.input, styles.quantityInput]}
-          value={modelItem.quantity ? modelItem.quantity.toString() : ""}
+          value={modelItem.quantity !== null && modelItem.quantity !== undefined ? modelItem.quantity.toString() : ""}
           onChangeText={(text) => {
             const newModels = [...models];
             newModels[index].quantity = parseInt(text) || 0;
@@ -365,6 +386,22 @@ export default function ProductionForm({
         </View>
       </View>
 
+      {/* NEW SECTION: Downtime & Defects */}
+      <View style={styles.row}>
+        <View style={styles.formGroupRow}>
+          <Text style={styles.label}>Plan DT</Text>
+          <TextInput style={styles.input} value={planDt} onChangeText={setPlanDt} keyboardType="numeric" placeholder="Mins"/>
+        </View>
+        <View style={styles.formGroupRow}>
+          <Text style={styles.label}>Unplan DT</Text>
+          <TextInput style={styles.input} value={unplanDt} onChangeText={setUnplanDt} keyboardType="numeric" placeholder="Mins"/>
+        </View>
+        <View style={styles.formGroupRow}>
+          <Text style={styles.label}>Defect Qty</Text>
+          <TextInput style={styles.input} value={defectQty} onChangeText={setDefectQty} keyboardType="number-pad" placeholder="Qty"/>
+        </View>
+      </View>
+
       <View style={styles.formGroup}>
         <Text style={styles.label}>Remarks</Text>
         <TextInput style={[styles.input, styles.textArea]} value={remarks} onChangeText={setRemarks} multiline numberOfLines={3} placeholder="Enter Remarks"/>
@@ -373,12 +410,11 @@ export default function ProductionForm({
       <View style={styles.row}>
         <View style={styles.formGroupRow}>
           <Text style={styles.label}>Employee Name(ID)</Text>
-<TextInput
-  style={[styles.input, { backgroundColor: '#e5e7eb' }]}
-  value={`${operatorName} - ${operatorId}`}
-  editable={false}
-/>
-
+          <TextInput
+            style={[styles.input, { backgroundColor: '#e5e7eb' }]}
+            value={`${operatorName} - ${operatorId}`}
+            editable={false}
+          />
         </View>
         <View style={styles.formGroupRow}>
           <Text style={styles.label}>Team</Text>
@@ -409,7 +445,6 @@ export default function ProductionForm({
   );
 }
 
-// STYLES ARE PRESERVED EXACTLY AS PROVIDED
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -492,6 +527,9 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontSize: 15,
     fontWeight: '600',
+  },
+  modelContainer: { // Added style definition for modelContainer
+    marginBottom: 8,
   },
   modelRow: {
     flexDirection: 'row',

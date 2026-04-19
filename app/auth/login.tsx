@@ -213,7 +213,7 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            <Text style={styles.versionText}>v2.0.3 • Enterprise Edition</Text>
+            <Text style={styles.versionText}>v2.0.4 • Enterprise Edition</Text>
             <Text style={styles.authText}>© 2026 SK Solutions</Text>
 
           </Animated.View>
