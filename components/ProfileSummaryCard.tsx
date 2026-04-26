@@ -30,9 +30,9 @@ export default function ProfileSummaryCard({
 
     // --- Updated OT Earnings Logic ---
     // Formula: (Gross / 30 / 8) * Hours * 1.5 multiplier
-    const hourlyRate = (grossBase / 30 / 8);
-    const totalOtValue = Math.round(item.overtime.totalHours * hourlyRate * 1.5);
-    const approvedOtValue = Math.round(item.overtime.approvedHours * hourlyRate * 1.5);
+    const hourlyRate = (grossBase / 26 / 8);
+    const totalOtValue = Math.round(item.overtime.totalHours * hourlyRate * 1);
+    const approvedOtValue = Math.round(item.overtime.approvedHours * hourlyRate * 1);
 
     return (
       <TouchableOpacity 
