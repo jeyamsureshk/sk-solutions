@@ -1,25 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { SummaryData, TrendPoint } from '@/types/summary';
 import { ChartDataPoint } from '@/hooks/useChartData';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import DateTimePicker from '@react-native-community/datetimepicker'; 
 import { useFqcInput } from '@/hooks/useFqcInput';
-import { usePlanInput } from '@/hooks/usePlanInput'; 
-import { captureRef } from 'react-native-view-shot'; 
-import * as Sharing from 'expo-sharing';
-import { Edit2, Trash2, Share2 } from 'lucide-react-native';
 
 interface SummaryCardProps {
   title: string;
   data: SummaryData;
   loading: boolean;
   overallTrend?: TrendPoint[];
-  chartData?: ChartDataPoint[]; 
+  chartData?: ChartDataPoint[]; // team trend
   chartPeriod?: string;
   selectedDate: Date;
-  period: 'day' | 'month' | 'year'; 
+  period: 'day' | 'month' | 'year'; // 🔥 ADDED: Required to know the current date tab
 }
 
 export default function SummaryCard({
@@ -30,7 +25,7 @@ export default function SummaryCard({
   chartData,
   chartPeriod,
   selectedDate,
-  period,
+  period, // 🔥 ADDED
 }: SummaryCardProps) {
   const [selectedPoint, setSelectedPoint] = useState<{
     x: string;
@@ -39,24 +34,10 @@ export default function SummaryCard({
   } | null>(null);
   const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(null);
   const [expandedTeams, setExpandedTeams] = useState<Set<number>>(new Set());
+  const [activeTab, setActiveTab] = useState<'summary' | 'input'>('summary');
   
-  const [activeTab, setActiveTab] = useState<'summary' | 'input' | 'plan'>('summary');
-  
-  const [etaPickerModel, setEtaPickerModel] = useState<string | null>(null);
-  const teamRefs = useRef<Array<View | null>>([]);
-
+  // 🔥 Pass the 'period' to the hook so it fetches sums for month/year
   const { fqcInputs, saving, updateInput, saveFqcInputs } = useFqcInput(selectedDate, period);
-  const { planData, savingPlan, updatePlan, savePlanData } = usePlanInput(selectedDate, period);
-
-  // 🔥 FIX: Moved the loading and empty data check ABOVE the calculations
-  if (loading || !data) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.loadingText}>{loading ? 'Loading...' : 'No data available'}</Text>
-      </View>
-    );
-  }
 
   const getEfficiencyColor = (efficiency: number) => {
     if (efficiency >= 100) return '#10b981';
@@ -70,6 +51,7 @@ export default function SummaryCard({
     
   const efficiencyColor = getEfficiencyColor(data.averageEfficiency);
 
+  // Wrapper function to handle the save button press
   const handleSave = async () => {
     const result = await saveFqcInputs();
     if (result.success) {
@@ -79,71 +61,14 @@ export default function SummaryCard({
     }
   };
 
-  const handleSavePlan = async () => {
-    const result = await savePlanData();
-    if (result.success) {
-      Alert.alert('Saved', result.message);
-    } else {
-      Alert.alert('Error', result.message);
-    }
-  };
-
-  const onEtaChange = (event: any, selectedDateObj?: Date) => {
-    const model = etaPickerModel;
-    setEtaPickerModel(null); 
-
-    if (event.type === 'set' && selectedDateObj && model) {
-      const year = selectedDateObj.getFullYear();
-      const month = String(selectedDateObj.getMonth() + 1).padStart(2, '0');
-      const day = String(selectedDateObj.getDate()).padStart(2, '0');
-      updatePlan(model, 'eta', `${year}-${month}-${day}`);
-    }
-  };
-
-  const formatEtaDate = (dateStr?: string) => {
-    if (!dateStr) return '';
-    const parts = dateStr.split('-');
-    if (parts.length !== 3) return dateStr; 
-    
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const day = parts[2];
-    const month = months[parseInt(parts[1], 10) - 1];
-    
-    return `${day}-${month}`;
-  };
-const formatDateDisplay = (date: Date) => {
-  const day = String(date.getDate()).padStart(2, '0');
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const month = monthNames[date.getMonth()];
-  const year = date.getFullYear();
-  return `${day}-${month}-${year}`;
-};
-  const shareTeamSnapshot = async (index: number, teamName: string) => {
-    try {
-      const viewRef = teamRefs.current[index];
-      if (!viewRef) return;
-      
-      const uri = await captureRef(viewRef, {
-        format: 'png',
-        quality: 1,
-        result: 'tmpfile', 
-      });
-      
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (isAvailable) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'image/png',
-          dialogTitle: `${teamName} Plan vs Actual`,
-          UTI: 'public.png', 
-        });
-      } else {
-        Alert.alert("Error", "Sharing is not available on this device");
-      }
-    } catch (error) {
-      console.error('Snapshot failed', error);
-      Alert.alert('Error', 'Failed to capture and share the summary.');
-    }
-  };
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -180,34 +105,34 @@ const formatDateDisplay = (date: Date) => {
               datasets: [
                 {
                   data: overallTrend.map(point => point.y),
-                  color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+                  color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`, // blue line
                   strokeWidth: 2,
                 },
               ],
             }}
             width={Dimensions.get('window').width - 64}
-            height={170}
+            height={170}   // taller so labels + tooltip fit
             chartConfig={{
               backgroundColor: '#ffffff',
               backgroundGradientFrom: '#ffffff',
               backgroundGradientTo: '#ffffff',
               decimalPlaces: 1,
-              color: (opacity = 1) => `rgba(5, 150, 205, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(55, 65, 81, ${opacity})`,
+              color: (opacity = 1) => `rgba(5, 150, 205, ${opacity})`, // green values
+              labelColor: (opacity = 1) => `rgba(55, 65, 81, ${opacity})`, // dark gray labels
               propsForDots: {
                 r: '3',
                 strokeWidth: '1',
-                stroke: '#2563eb',
+                stroke: '#2563eb', // blue stroke for dots
               },
               propsForBackgroundLines: {
-                strokeDasharray: '',
-                stroke: '#e5e7eb',
+                strokeDasharray: '', // solid grid lines
+                stroke: '#e5e7eb',   // light gray grid
               },
             }}
-            bezier
+            bezier   // smooth curve
             style={styles.chart}
-            verticalLabelRotation={0}
-            withShadow={true}
+            verticalLabelRotation={0}   // rotate labels for readability
+            withShadow={true}            // subtle fill under curve
             onDataPointClick={({ value, index }) => {
               const label = overallTrend[index]?.x ?? '';
               setSelectedPoint({ x: label, y: value, index });
@@ -236,7 +161,12 @@ const formatDateDisplay = (date: Date) => {
               ]}
               onPress={() => setActiveTab('summary')}
             >
-              <Text style={[styles.teamTabText, activeTab === 'summary' && styles.teamTabTextActive]}>
+              <Text
+                style={[
+                  styles.teamTabText,
+                  activeTab === 'summary' && styles.teamTabTextActive,
+                ]}
+              >
                 Summary
               </Text>
             </TouchableOpacity>
@@ -247,19 +177,13 @@ const formatDateDisplay = (date: Date) => {
               ]}
               onPress={() => setActiveTab('input')}
             >
-              <Text style={[styles.teamTabText, activeTab === 'input' && styles.teamTabTextActive]}>
+              <Text
+                style={[
+                  styles.teamTabText,
+                  activeTab === 'input' && styles.teamTabTextActive,
+                ]}
+              >
                 Input vs Actual
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.teamTab,
-                activeTab === 'plan' && styles.teamTabActive,
-              ]}
-              onPress={() => setActiveTab('plan')}
-            >
-              <Text style={[styles.teamTabText, activeTab === 'plan' && styles.teamTabTextActive]}>
-                Plan vs Actual
               </Text>
             </TouchableOpacity>
           </View>
@@ -269,43 +193,34 @@ const formatDateDisplay = (date: Date) => {
             const isExpanded = expandedTeams.has(index);
             const teamChartData = getTeamChartData(teamSummary.team);
             return (
-              <View 
-                key={index} 
-                style={styles.teamSummaryItem}
-                ref={(el) => (teamRefs.current[index] = el)}
-                collapsable={false} 
-              >
+              <View key={index} style={styles.teamSummaryItem}>
+                {/* Header row with team name and expand icon */}
                 <View style={styles.teamHeader}>
                   <Text
                     style={styles.teamName}
-                    onPress={() => setSelectedTeamIndex(isSelected ? null : index)}
+                    onPress={() =>
+                      setSelectedTeamIndex(isSelected ? null : index)
+                    }
                   >
                     {teamSummary.team}
                   </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <TouchableOpacity onPress={() => shareTeamSnapshot(index, teamSummary.team)}>
-                      <Share2 size={13} color="#64748B" />
+                  {teamSummary.modelSummaries && teamSummary.modelSummaries.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const newExpanded = new Set(expandedTeams);
+                        isExpanded ? newExpanded.delete(index) : newExpanded.add(index);
+                        setExpandedTeams(newExpanded);
+                      }}
+                    >
+                      <Icon
+                        name={isExpanded ? 'expand-less' : 'expand-more'}
+                        size={20}
+                        color="#2563eb"
+                      />
                     </TouchableOpacity>
-                    
-                    {teamSummary.modelSummaries && teamSummary.modelSummaries.length > 0 && (
-                      <TouchableOpacity
-                        onPress={() => {
-                          const newExpanded = new Set(expandedTeams);
-                          isExpanded ? newExpanded.delete(index) : newExpanded.add(index);
-                          setExpandedTeams(newExpanded);
-                        }}
-                      >
-                        <Icon
-                          name={isExpanded ? 'expand-less' : 'expand-more'}
-                          size={20}
-                          color="#2563eb"
-                        />
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                  )}
                 </View>
                 
-                {/* === SUMMARY TAB === */}
                 {activeTab === 'summary' && (
                   <>
                     <View style={styles.teamStats}>
@@ -325,8 +240,8 @@ const formatDateDisplay = (date: Date) => {
                     {isExpanded && (
                       <View style={styles.modelList}>
                         {teamSummary.modelSummaries
-                          .slice() 
-                          .sort((a, b) => a.model.localeCompare(b.model)) 
+                          .slice() // create a shallow copy so original data isn’t mutated
+                          .sort((a, b) => a.model.localeCompare(b.model)) // sort alphabetically
                           .map((model, modelIndex) => (
                             <View key={modelIndex} style={styles.modelItem}>
                               <Text style={styles.modelName}>{model.model}</Text>
@@ -349,42 +264,41 @@ const formatDateDisplay = (date: Date) => {
                             datasets: [
                               {
                                 data: teamChartData.map(point => point.y),
-                                color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+                                color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`, // blue line
                                 strokeWidth: 2,
                               },
                             ],
                           }}
                           width={Dimensions.get('window').width - 80}
-                          height={170}
+                          height={170}   // taller so labels fit
                           chartConfig={{
                             backgroundColor: '#ffffff',
                             backgroundGradientFrom: '#ffffff',
                             backgroundGradientTo: '#ffffff',
                             decimalPlaces: 1,
-                            color: (opacity = 1) => `rgba(5, 150, 205, ${opacity})`,
-                            labelColor: (opacity = 1) => `rgba(55, 65, 81, ${opacity})`,
+                            color: (opacity = 1) => `rgba(5, 150, 205, ${opacity})`, // green values
+                            labelColor: (opacity = 1) => `rgba(55, 65, 81, ${opacity})`, // dark gray labels
                             propsForDots: {
                               r: '3',
                               strokeWidth: '1',
-                              stroke: '#2563eb',
+                              stroke: '#2563eb', // blue stroke for dots
                             },
                             propsForBackgroundLines: {
-                              strokeDasharray: '',
-                              stroke: '#e5e7eb',
+                              strokeDasharray: '', // solid grid lines
+                              stroke: '#e5e7eb',   // light gray grid
                             },
                           }}
-                          bezier
+                          bezier   // keep smooth curve
                           style={styles.chart}
-                          verticalLabelRotation={0}
-                          withShadow={true}
-                          segments={5}
+                          verticalLabelRotation={0}   // rotate labels for readability
+                          withShadow={true}          // enable fill under curve
+                          segments={5}                // more grid lines for clarity
                         />
                       </View>
                     )}
                   </>
                 )}
                 
-                {/* === INPUT VS ACTUAL TAB === */}
                 {activeTab === 'input' && (
                   <>
                     <View style={styles.teamStats}>
@@ -403,6 +317,7 @@ const formatDateDisplay = (date: Date) => {
                     </View>
                     {isExpanded && teamSummary.modelSummaries && teamSummary.modelSummaries.length > 0 && (
                       <View style={styles.modelList}>
+                        {/* Table Header */}
                         <View style={styles.tableHeader}>
                           <Text style={styles.headerText}>Model Name</Text>
                           <Text style={styles.headerText}>FQC Input</Text>
@@ -411,12 +326,15 @@ const formatDateDisplay = (date: Date) => {
                           <Text style={styles.headerText}>Status</Text>
                         </View>
                         {teamSummary.modelSummaries
-                          .slice()
-                          .sort((a, b) => a.model.localeCompare(b.model))
+                          .slice() // create a shallow copy so original data isn’t mutated
+                          .sort((a, b) => a.model.localeCompare(b.model)) // sort alphabetically
                           .map((model, modelIndex) => {
                             const key = model.model;
+                            
+                            // Safe math evaluation for pending calculation
                             const rawInputValue = fqcInputs[key];
                             const fqcInputNumber = typeof rawInputValue === 'number' ? rawInputValue : parseInt(String(rawInputValue)) || 0;
+                            
                             const packed = model.totalQuantity;
                             const pending = fqcInputNumber - packed;
                             const status = pending === 0 ? 'Completed' : 'Pending';
@@ -425,12 +343,14 @@ const formatDateDisplay = (date: Date) => {
                               <View key={modelIndex} style={styles.modelItem}>
                                 <Text style={styles.modelNameCell}>{model.model}</Text>
                                 <View style={styles.tableCell}>
+                                  {/* 🔥 LOGIC APPLIED HERE: Show input if 'day', otherwise show text */}
                                   {period === 'day' ? (
                                     <TextInput
                                       style={styles.fqcInput}
                                       keyboardType="numeric"
                                       value={rawInputValue !== undefined ? String(rawInputValue) : "0"}
                                       onChangeText={(text) => {
+                                        // Allow emptying the field or parse integer
                                         const newValue = text === '' ? '' : parseInt(text.replace(/[^0-9]/g, '')) || 0;
                                         updateInput(key, newValue);
                                       }}
@@ -454,119 +374,11 @@ const formatDateDisplay = (date: Date) => {
                     )}
                   </>
                 )}
-
-               {activeTab === 'plan' && (
-  <>
-    {isExpanded && teamSummary.modelSummaries && teamSummary.modelSummaries.length > 0 && (
-      <View style={styles.modelList}>
-        
-        {/* Date Header Container */}
-        <View style={styles.planDateHeader}>
-          <Text style={styles.planDateText}>
-            Plan Date: {formatDateDisplay(selectedDate)}
-          </Text>
-        </View>
-
-        {/* Table Header Container */}
-        <View style={styles.tableHeader}>
-          <Text style={[styles.headerText, { flex: 0.5, fontSize: 10 }]}>S.No</Text>
-          <Text style={[styles.headerText, { flex: 1.4, textAlign: 'left', fontSize: 10 }]}>Model Name</Text>
-          <Text style={[styles.headerText, { flex: 0.6, fontSize: 10 }]}>Plan</Text>
-          <Text style={[styles.headerText, { flex: 0.6, fontSize: 10 }]}>Actual</Text>
-          <Text style={[styles.headerText, { flex: 1.9, fontSize: 10 }]}>Remarks</Text>
-          <Text style={[styles.headerText, { flex: 0.6, fontSize: 10 }]}>ETA</Text>
-        </View>
-                        
-                        {teamSummary.modelSummaries.slice().sort((a, b) => a.model.localeCompare(b.model)).map((model, modelIndex) => {
-                          const key = model.model;
-                          const currentPlan = planData[key] || { plan_qty: 0, remarks: '', eta: '' };
-                          const actual = model.totalQuantity; 
-
-                          const isCompleted = currentPlan.plan_qty > 0 && actual >= currentPlan.plan_qty;
-                          const displayRemark = currentPlan.remarks || (isCompleted ? 'Completed' : '');
-                          const placeholderText = isCompleted ? 'Completed' : 'Remarks';
-
-                          return (
-                            <View key={modelIndex} style={[styles.modelItem, { alignItems: 'flex-start' }]}>
-                              <Text style={[styles.tableCell, { flex: 0.5, marginTop: 4, fontSize: 10 }]}>{modelIndex + 1}</Text>
-                              <Text style={[styles.modelNameCell, { flex: 1.4, marginTop: 4, fontSize: 10 }]} numberOfLines={2}>
-                                {model.model}
-                              </Text>
-                              
-                              <View style={[styles.tableCell, { flex: 0.6, marginTop: 4 }]}>
-                                {period === 'day' ? (
-                                  <TextInput
-                                    style={[styles.tableInput, { fontSize: 10 }]}
-                                    keyboardType="numeric"
-                                    value={currentPlan.plan_qty ? String(currentPlan.plan_qty) : ""}
-                                    onChangeText={(text) => {
-                                      const newValue = text === '' ? 0 : parseInt(text.replace(/[^0-9]/g, '')) || 0;
-                                      updatePlan(key, 'plan_qty', newValue);
-                                    }}
-                                    placeholder="0"
-                                    placeholderTextColor="#9ca3af"
-                                  />
-                                ) : (
-                                  <Text style={[styles.tableCell, { fontSize: 10 }]}>{currentPlan.plan_qty.toLocaleString()}</Text>
-                                )}
-                              </View>
-
-                              <Text style={[styles.tableCell, { flex: 0.6, marginTop: 4, fontSize: 10 }]}>{actual.toLocaleString()}</Text>
-
-                              <View style={[styles.tableCell, { flex: 1.9 }]}>
-                                {period === 'day' ? (
-                                  <TextInput
-                                    style={[styles.tableInput, { textAlign: 'center', minHeight: 24, textAlignVertical: 'top', fontSize: 8.5 }]}
-                                    value={displayRemark}
-                                    onChangeText={(text) => updatePlan(key, 'remarks', text)}
-                                    placeholder={placeholderText}
-                                    placeholderTextColor="#9ca3af"
-                                    multiline={true} 
-                                  />
-                                ) : (
-                                  <Text style={[styles.tableCell, { textAlign: 'left', marginTop: 4, fontSize: 8.5 }]} numberOfLines={undefined}>
-                                    {displayRemark || '-'}
-                                  </Text>
-                                )}
-                              </View>
-
-                            <View style={[styles.tableCell, { flex: 0.6, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }]}>
-  {period === 'day' ? (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <TouchableOpacity onPress={() => setEtaPickerModel(key)}>
-        <Text style={[styles.tableInput, { color: currentPlan.eta ? '#374151' : '#9ca3af', fontSize: 8.5 }]}>
-          {formatEtaDate(currentPlan.eta) || '-'}
-        </Text>
-      </TouchableOpacity>
-      
-      {/* 🔥 ADDED: Close/Delete Icon to clear the date */}
-      {currentPlan.eta ? (
-        <TouchableOpacity 
-          onPress={() => updatePlan(key, 'eta', '')} 
-          style={{ marginLeft: 2 }}
-        >
-          <Icon name="close" size={10} color="#EF4444" />
-        </TouchableOpacity>
-      ) : null}
-    </View>
-  ) : (
-    <Text style={[styles.tableCell, { marginTop: 4, fontSize: 10 }]} numberOfLines={1}>
-      {formatEtaDate(currentPlan.eta) || '-'}
-    </Text>
-  )}
-</View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </>
-                )}
               </View>
             );
           })}
           
-          {/* Action Buttons */}
+          {/* 🔥 LOGIC APPLIED HERE: Button ONLY renders if 'activeTab' is input AND 'period' is day */}
           {activeTab === 'input' && period === 'day' && (
             <TouchableOpacity
               style={[styles.saveButton, saving && styles.saveButtonDisabled]}
@@ -578,29 +390,7 @@ const formatDateDisplay = (date: Date) => {
               </Text>
             </TouchableOpacity>
           )}
-
-          {activeTab === 'plan' && period === 'day' && (
-            <TouchableOpacity 
-              style={[styles.saveButton, savingPlan && styles.saveButtonDisabled]} 
-              onPress={handleSavePlan} 
-              disabled={savingPlan}
-            >
-              <Text style={styles.saveButtonText}>
-                {savingPlan ? 'Saving...' : 'Save Plan vs Actual'}
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
-      )}
-
-      {/* Date Picker Component */}
-      {etaPickerModel && (
-        <DateTimePicker
-          value={planData[etaPickerModel]?.eta ? new Date(planData[etaPickerModel].eta) : new Date()}
-          mode="date"
-          display="default"
-          onChange={onEtaChange}
-        />
       )}
     </View>
   );
@@ -696,7 +486,7 @@ const styles = StyleSheet.create({
   teamTab: {
     flex: 1,
     paddingVertical: 6,
-    paddingHorizontal: 8, 
+    paddingHorizontal: 12,
     borderRadius: 6,
     backgroundColor: '#f3f4f6',
     alignItems: 'center',
@@ -705,10 +495,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563eb',
   },
   teamTabText: {
-    fontSize: 11, 
+    fontSize: 12,
     fontWeight: '600',
     color: '#6b7280',
-    textAlign: 'center',
   },
   teamTabTextActive: {
     color: '#ffffff',
@@ -721,7 +510,7 @@ const styles = StyleSheet.create({
   },
   teamHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-between', // pushes icon to right
     alignItems: 'center',
     marginBottom: 2,
   },
@@ -791,7 +580,7 @@ const styles = StyleSheet.create({
   modelNameCell: {
     flex: 1,
     textAlign: 'left',
-    fontSize: 10,
+    fontSize: 12,
     color: '#374151',
   },
   tableCell: {
@@ -806,15 +595,6 @@ const styles = StyleSheet.create({
     color: '#374151',
     paddingVertical: 0,
     paddingHorizontal: 0,
-  },
-  tableInput: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#374151',
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-    backgroundColor: 'transparent',
-    minWidth: 30,
   },
   saveButton: {
     backgroundColor: '#2563eb',
@@ -831,16 +611,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
-planDateHeader: {
-  paddingVertical: 8,
-  alignItems: 'center',
-  borderBottomWidth: 1,
-  borderBottomColor: '#e5e7eb',
-  marginBottom: 8,
-},
-planDateText: {
-  fontSize: 12,
-  fontWeight: '600',
-  color: '#374151',
-},
 });

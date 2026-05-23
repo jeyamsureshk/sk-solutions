@@ -266,6 +266,10 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                 ? record.item 
                 : [{ model: '-', quantity: record.units_produced }];
 
+              // 🔥 LOGIC: Check if Actual Total is greater than Plan
+              const isOverPlan = Number(record.units_produced) > Number(record.target_units);
+              const actualColor = isOverPlan ? THEME.markerRed : THEME.markerBlue;
+
               return (
                 <Pressable 
                   key={record.id}
@@ -290,7 +294,8 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                           <Text style={styles.tdText}>{item.model}</Text>
                         </View>
                         <View style={[styles.cell, styles.subCellQty]}>
-                          <Text style={[styles.tdText, { color: THEME.markerBlue, fontWeight: '700' }]}>{item.quantity}</Text>
+                          {/* 🔥 APPLIED DYNAMIC COLOR HERE */}
+                          <Text style={[styles.tdText, { color: actualColor, fontWeight: '700' }]}>{item.quantity}</Text>
                         </View>
                       </View>
                     ))}
@@ -371,7 +376,7 @@ cardContainer: {
     borderWidth: 1, 
     borderColor: THEME.border, 
     elevation: 4, 
-    shadowColor: "#f66",       // Standard dark color for depth
+    shadowColor: "#f66",        // Standard dark color for depth
     shadowOffset: {
       width: 0,
       height: 4,                    // Pushes shadow downwards

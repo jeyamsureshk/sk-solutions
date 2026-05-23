@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,6 +9,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import io, { Socket } from 'socket.io-client';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view'; // 🔥 IMPORTED HERE
 
 import SummaryCard from '@/components/SummaryCard';
 // Import your custom modal
@@ -115,13 +115,13 @@ export default function DashboardScreen() {
       {/* CUSTOM MODAL COMPONENT 
           This sits at the root level of the screen
       */}
-      <EfficiencyAlertModal
+     {/* <EfficiencyAlertModal
         visible={modalVisible}
         onDismiss={() => setModalVisible(false)}
         title={modalData.title}
         teams={modalData.teams}
         message={modalData.message}
-      />
+      />*/}
 
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
@@ -152,7 +152,14 @@ export default function DashboardScreen() {
         ))}
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      {/* 🔥 REPLACED ScrollView WITH KeyboardAwareScrollView */}
+      <KeyboardAwareScrollView 
+        style={styles.scrollView} 
+        contentContainerStyle={styles.scrollContent}
+        enableOnAndroid={true}
+        extraScrollHeight={20}
+        keyboardShouldPersistTaps="handled"
+      >
         <SummaryCard
           title={summaryTitle}
           data={data}
@@ -170,7 +177,7 @@ export default function DashboardScreen() {
             © 2026 <Text style={styles.linkText} onPress={() => Linking.openURL('https://jeyamsureshk.netlify.app')}>SK Solutions h</Text>
           </Text>
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }
