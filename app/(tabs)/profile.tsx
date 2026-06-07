@@ -26,7 +26,7 @@ import { useCurrentOperatorId } from '@/hooks/useCurrentOperatorId';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileSummaryCard from '@/components/ProfileSummaryCard';
 import { COLORS } from '@/constants/theme';
-
+import * as DocumentPicker from 'expo-document-picker';
 const LOGO_IMAGE = require('@/assets/images/logo.png');
 
 const getWorkingDaysCount = (year: number, month: number) => {
@@ -168,14 +168,14 @@ export default function ProfileScreen() {
     const hourlyRate = (grossBase / 26 / 8);
     const otAmount = Math.round(approvedOtHours * hourlyRate * 1);
 
-    const basic = Math.round(grossBase * 0.3693);
-    const hra = Math.round(grossBase * 0.1846);
-    const conveyance = Math.round(grossBase * 0.0933);
-    const special = Math.round(grossBase * 0.3528);
+    const basic = Math.round(15365);
+    const hra = Math.round(basic* .3065);
+    const conveyance = Math.round(grossBase * 0);
+    const special = Math.round(grossBase * 0);
     
     const totalGross = basic + hra + conveyance + special + otAmount;
 
-    const pf = Math.round(basic * 0.12);
+    const pf = Math.round(basic * 0.12-44);
     const esi = Math.ceil(totalGross * 0.0075);
     const pt = Number(salaryData.profTax) || 0;
     const trans = Number(salaryData.transport) || 0;
@@ -266,6 +266,35 @@ export default function ProfileScreen() {
     } catch (error: any) {
       Alert.alert('Upload Failed', error.message || 'Could not upload the file.');
     } finally { setUploadingPdf(false); }
+  };
+const handleDeleteDocument = (fileName: string) => {
+    if (!profile?.id) return;
+
+    Alert.alert(
+      'Delete Document',
+      `Are you sure you want to delete "${fileName}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase.storage
+                .from('payroll_documents')
+                .remove([`${profile.id}/${fileName}`]);
+
+              if (error) throw error;
+              
+              // Refresh the list after successful deletion
+              fetchPayrollDocuments();
+            } catch (error: any) {
+              Alert.alert('Delete Failed', error.message || 'Could not delete the file.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleLogout = async () => {
@@ -542,12 +571,20 @@ export default function ProfileScreen() {
                 {expandedYear === year && (
                   <View style={styles.yearFilesList}>
                     {groupedPayroll[year].map((file, index) => (
-                      <TouchableOpacity key={index} style={styles.fileItemRow} onPress={() => Linking.openURL(file.url)}>
-                        <View style={styles.fileIconWrapper}><MaterialCommunityIcons name="file-pdf-box" size={20} color={COLORS.error} /></View>
-                        <Text style={styles.fileNameText} numberOfLines={1} ellipsizeMode="middle">{file.name}</Text>
-                        <Feather name="external-link" size={16} color={COLORS.secondary} />
-                      </TouchableOpacity>
-                    ))}
+  <TouchableOpacity 
+    key={index} 
+    style={styles.fileItemRow} 
+    onPress={() => Linking.openURL(file.url)}
+    onLongPress={() => handleDeleteDocument(file.name)}
+    delayLongPress={500}
+  >
+    <View style={styles.fileIconWrapper}>
+      <MaterialCommunityIcons name="file-pdf-box" size={20} color={COLORS.error} />
+    </View>
+    <Text style={styles.fileNameText} numberOfLines={1} ellipsizeMode="middle">{file.name}</Text>
+    <Feather name="external-link" size={16} color={COLORS.secondary} />
+  </TouchableOpacity>
+))}
                   </View>
                 )}
               </View>
