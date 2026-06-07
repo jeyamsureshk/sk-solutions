@@ -236,15 +236,15 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
             </View>
             <View style={[styles.infoCol, styles.infoColBorder]}>
               <Text style={styles.infoLabel}>SHIFT</Text>
-              <Text style={styles.infoValue}>General</Text>
+              <Text style={[styles.infoValue, { color: teamAccent }]}>General</Text>
             </View>
             <View style={styles.infoCol}>
               <Text style={styles.infoLabel}>DATE</Text>
-              <Text style={styles.infoValue}>{formatDate(date)}</Text>
+              <Text style={[styles.infoValue, { color: teamAccent }]}>{formatDate(date)}</Text>
             </View>
-            <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
-               <Share2 size={16} color="#64748B" />
-            </TouchableOpacity>
+           <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
+   <Share2 size={16} color={teamAccent} />
+</TouchableOpacity>
           </View>
 
           {/* --- Table Grid --- */}

@@ -6,14 +6,19 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Platform,
   Alert,
-  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
   Modal,
+  Animated,
+  Easing,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Trash2, ChevronUp, ChevronDown } from 'lucide-react-native';
+import { Trash2, Plus, X, RotateCcw, Camera, Clock, Users, Target, ChevronDown, ChevronUp } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { ProductionRecord, ProductionRecordInsert, Item } from '@/types/database';
 import { useOperators } from '@/hooks/useOperators';
 import { useTeams } from '@/hooks/useTeams';
@@ -219,229 +224,241 @@ export default function ProductionForm({
   };
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.formGroup}>
-        <Text style={styles.label}>Date & Hour</Text>
-        <View style={styles.rowContainer}>
-          <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
-            <Text style={styles.dateButtonText}>
-              {new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-            </Text>
-          </TouchableOpacity>
+    <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView 
+          style={styles.container} 
+          contentContainerStyle={{ paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Date & Hour</Text>
+            <View style={styles.rowContainer}>
+              <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
+                <Text style={styles.dateButtonText}>
+                  {new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity style={styles.timeButton} onPress={() => setShowTimePicker(true)}>
-            <Text style={styles.timeButtonText}>
-              {new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)
-                .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+              <TouchableOpacity style={styles.timeButton} onPress={() => setShowTimePicker(true)}>
+                <Text style={styles.timeButtonText}>
+                  {new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)
+                    .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-      {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />}
-      {showTimePicker && (
-        <DateTimePicker
-          value={new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)}
-          mode="time"
-          display="default"
-          onChange={onTimeChange}
-        />
-      )}
-<View style={styles.formGroup}>
-  <Text style={styles.label}>Models</Text>
-  {models.map((modelItem, index) => (
-    <View key={index} style={styles.modelContainer}>
-      <View style={styles.modelRow}>
-        <TextInput
-          style={[styles.input, styles.modelInput]}
-          value={modelItem.model}
-          onChangeText={(text) => {
-            const newModels = [...models];
-            newModels[index].model = text;
-            setModels(newModels);
-                  if (text.length > 0) {
-                    const normalizedWords = text.toLowerCase().split(/\s+/).map(w => w.replace(/-/g, "")).filter(w => w.length > 0);
-                    const filtered = items.filter(it => {
-                      const normalizedDesc = it.description.toLowerCase().replace(/[\s-]/g, "");
-                      const normalizedPart = it.part_id.toLowerCase().replace(/[\s-]/g, "");
-                      return normalizedWords.every(word => normalizedDesc.includes(word) || normalizedPart.includes(word));
-                    });
-              setFilteredItems(filtered);
-              setDropdownVisible(filtered.length > 0);
-              setScrollY(0); // Reset scroll position for new search
-            } else {
-              setDropdownVisible(false);
-            }
-            setCurrentModelIndex(index);
-          }}
-          onFocus={() => {
-            setCurrentModelIndex(index);
-            setDropdownVisible(false);
-          }}
-          placeholder="Model name"
-        />
+          {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />}
+          {showTimePicker && (
+            <DateTimePicker
+              value={new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)}
+              mode="time"
+              display="default"
+              onChange={onTimeChange}
+            />
+          )}
 
-        <TextInput
-          style={[styles.input, styles.quantityInput]}
-          value={modelItem.quantity !== null && modelItem.quantity !== undefined ? modelItem.quantity.toString() : ""}
-          onChangeText={(text) => {
-            const newModels = [...models];
-            newModels[index].quantity = parseInt(text) || 0;
-            setModels(newModels);
-          }}
-          placeholder="Qty"
-          keyboardType="number-pad"
-        />
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Models</Text>
+            {models.map((modelItem, index) => (
+              <View key={index} style={styles.modelContainer}>
+                <View style={styles.modelRow}>
+                  <TextInput
+                    style={[styles.input, styles.modelInput]}
+                    value={modelItem.model}
+                    onChangeText={(text) => {
+                      const newModels = [...models];
+                      newModels[index].model = text;
+                      setModels(newModels);
+                            if (text.length > 0) {
+                              const normalizedWords = text.toLowerCase().split(/\s+/).map(w => w.replace(/-/g, "")).filter(w => w.length > 0);
+                              const filtered = items.filter(it => {
+                                const normalizedDesc = it.description.toLowerCase().replace(/[\s-]/g, "");
+                                const normalizedPart = it.part_id.toLowerCase().replace(/[\s-]/g, "");
+                                return normalizedWords.every(word => normalizedDesc.includes(word) || normalizedPart.includes(word));
+                              });
+                        setFilteredItems(filtered);
+                        setDropdownVisible(filtered.length > 0);
+                        setScrollY(0); // Reset scroll position for new search
+                      } else {
+                        setDropdownVisible(false);
+                      }
+                      setCurrentModelIndex(index);
+                    }}
+                    onFocus={() => {
+                      setCurrentModelIndex(index);
+                      setDropdownVisible(false);
+                    }}
+                    placeholder="Model name"
+                  />
 
-        {models.length > 1 && (
-          <TouchableOpacity 
-            style={styles.removeButton} 
-            onPress={() => setModels(models.filter((_, i) => i !== index))}
-          >
-            <Trash2 size={16} color="#ffffff" />
-          </TouchableOpacity>
-        )}
-      </View>
+                  <TextInput
+                    style={[styles.input, styles.quantityInput]}
+                    value={modelItem.quantity !== null && modelItem.quantity !== undefined ? modelItem.quantity.toString() : ""}
+                    onChangeText={(text) => {
+                      const newModels = [...models];
+                      newModels[index].quantity = parseInt(text) || 0;
+                      setModels(newModels);
+                    }}
+                    placeholder="Qty"
+                    keyboardType="number-pad"
+                  />
 
-      {dropdownVisible && currentModelIndex === index && (
-        <View style={styles.dropdownContainer}>
-          <View style={styles.dropdownWithButtons}>
-            <FlatList
-              ref={flatListRef}
-              data={filteredItems}
-              keyExtractor={(_, idx) => idx.toString()}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.dropdownItem}
-                  onPress={() => {
-                    const newModels = [...models];
-                    newModels[index].model = item.model;
-                    setModels(newModels);
-                    setDropdownVisible(false);
-                  }}
-                >
-                  <Text style={styles.dropdownText}>{item.part_id} : {item.description}</Text>
+                  {models.length > 1 && (
+                    <TouchableOpacity 
+                      style={styles.removeButton} 
+                      onPress={() => setModels(models.filter((_, i) => i !== index))}
+                    >
+                      <Trash2 size={16} color="#ffffff" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {dropdownVisible && currentModelIndex === index && (
+                  <View style={styles.dropdownContainer}>
+                    <View style={styles.dropdownWithButtons}>
+                      <FlatList
+                        ref={flatListRef}
+                        data={filteredItems}
+                        keyExtractor={(_, idx) => idx.toString()}
+                        renderItem={({ item }) => (
+                          <TouchableOpacity
+                            style={styles.dropdownItem}
+                            onPress={() => {
+                              const newModels = [...models];
+                              newModels[index].model = item.model;
+                              setModels(newModels);
+                              setDropdownVisible(false);
+                            }}
+                          >
+                            <Text style={styles.dropdownText}>{item.part_id} : {item.description}</Text>
+                          </TouchableOpacity>
+                        )}
+                        scrollEnabled={Platform.OS === 'web'} // Enable native scroll for web, disable for custom buttons
+                        showsVerticalScrollIndicator={false}
+                        style={{ height: filteredItems.length > 5 ? 200 : 'auto', flex: 1 }}
+                      />
+
+                      {/* ✅ Only show buttons if list length > 5 */}
+                      {filteredItems.length > 5 && (
+                        <View style={styles.scrollButtons}>
+                          <TouchableOpacity
+                            style={styles.scrollButton}
+                            onPress={() => {
+                              const newY = Math.max(0, scrollY - 150);
+                              setScrollY(newY);
+                              flatListRef.current?.scrollToOffset({ offset: newY, animated: true });
+                            }}
+                          >
+                            <ChevronUp size={20} color="#2563eb" />
+                            <Text style={styles.scrollButtonText}>UP</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.scrollButton}
+                            onPress={() => {
+                              // Estimate max scroll (approx 40px per item)
+                              const maxScroll = (filteredItems.length * 40) - 200;
+                              const newY = Math.min(maxScroll, scrollY + 150);
+                              setScrollY(newY);
+                              flatListRef.current?.scrollToOffset({ offset: newY, animated: true });
+                            }}
+                          >
+                            <ChevronDown size={20} color="#2563eb" />
+                            <Text style={styles.scrollButtonText}>DOWN</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity 
+              style={styles.addButton} 
+              onPress={() => setModels([...models, { model: '', quantity: 0 }])}
+            >
+              <Text style={styles.addButtonText}>Add Model</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.row}>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Manpower</Text>
+              <TextInput style={styles.input} value={manpower} onChangeText={setManpower} keyboardType="number-pad" placeholder="Manpower"/>
+            </View>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Target Units</Text>
+              <TextInput style={styles.input} value={targetUnits} onChangeText={setTargetUnits} keyboardType="number-pad" placeholder="Target Units"/>
+            </View>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Units Produced</Text>
+              <TextInput style={[styles.input, { backgroundColor: '#e5e7eb' }]} value={models.reduce((sum, item) => sum + (item.quantity || 0), 0).toString()} editable={false} />
+            </View>
+          </View>
+
+          {/* NEW SECTION: Downtime & Defects */}
+          <View style={styles.row}>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Plan DT</Text>
+              <TextInput style={styles.input} value={planDt} onChangeText={setPlanDt} keyboardType="numeric" placeholder="Mins"/>
+            </View>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Unplan DT</Text>
+              <TextInput style={styles.input} value={unplanDt} onChangeText={setUnplanDt} keyboardType="numeric" placeholder="Mins"/>
+            </View>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Defect Qty</Text>
+              <TextInput style={styles.input} value={defectQty} onChangeText={setDefectQty} keyboardType="number-pad" placeholder="Qty"/>
+            </View>
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Remarks</Text>
+            <TextInput style={[styles.input, styles.textArea]} value={remarks} onChangeText={setRemarks} multiline numberOfLines={3} placeholder="Enter Remarks"/>
+          </View>
+
+          <View style={styles.row}>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Employee Name(ID)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: '#e5e7eb' }]}
+                value={`${operatorName} - ${operatorId}`}
+                editable={false}
+              />
+            </View>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Team</Text>
+              <TextInput style={[styles.input, { backgroundColor: '#e5e7eb' }]} value={team} editable={false} />
+            </View>
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={[styles.submitButton, { flex: 1, marginRight: 8 }]} onPress={handleSubmit}>
+                <Text style={styles.submitButtonText}>{submitButtonText}</Text>
+              </TouchableOpacity>
+
+              {onClear && (
+                <TouchableOpacity style={[styles.clearButton, { flex: 1, marginLeft: 8 }]} onPress={handleClear}>
+                  <Text style={styles.clearButtonText}>Clear Form</Text>
                 </TouchableOpacity>
               )}
-              scrollEnabled={Platform.OS === 'web'} // Enable native scroll for web, disable for custom buttons
-              showsVerticalScrollIndicator={false}
-              style={{ height: filteredItems.length > 5 ? 200 : 'auto', flex: 1 }}
-            />
+            </View>
 
-            {/* ✅ Only show buttons if list length > 5 */}
-            {filteredItems.length > 5 && (
-              <View style={styles.scrollButtons}>
-                <TouchableOpacity
-                  style={styles.scrollButton}
-                  onPress={() => {
-                    const newY = Math.max(0, scrollY - 150);
-                    setScrollY(newY);
-                    flatListRef.current?.scrollToOffset({ offset: newY, animated: true });
-                  }}
-                >
-                  <ChevronUp size={20} color="#2563eb" />
-                  <Text style={styles.scrollButtonText}>UP</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.scrollButton}
-                  onPress={() => {
-                    // Estimate max scroll (approx 40px per item)
-                    const maxScroll = (filteredItems.length * 40) - 200;
-                    const newY = Math.min(maxScroll, scrollY + 150);
-                    setScrollY(newY);
-                    flatListRef.current?.scrollToOffset({ offset: newY, animated: true });
-                  }}
-                >
-                  <ChevronDown size={20} color="#2563eb" />
-                  <Text style={styles.scrollButtonText}>DOWN</Text>
-                </TouchableOpacity>
-              </View>
+            {onCancel && (
+              <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
             )}
           </View>
-        </View>
-      )}
-    </View>
-  ))}
-  <TouchableOpacity 
-    style={styles.addButton} 
-    onPress={() => setModels([...models, { model: '', quantity: 0 }])}
-  >
-    <Text style={styles.addButtonText}>Add Model</Text>
-  </TouchableOpacity>
-</View>
-
-      <View style={styles.row}>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Manpower</Text>
-          <TextInput style={styles.input} value={manpower} onChangeText={setManpower} keyboardType="number-pad" placeholder="Manpower"/>
-        </View>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Target Units</Text>
-          <TextInput style={styles.input} value={targetUnits} onChangeText={setTargetUnits} keyboardType="number-pad" placeholder="Target Units"/>
-        </View>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Units Produced</Text>
-          <TextInput style={[styles.input, { backgroundColor: '#e5e7eb' }]} value={models.reduce((sum, item) => sum + (item.quantity || 0), 0).toString()} editable={false} />
-        </View>
-      </View>
-
-      {/* NEW SECTION: Downtime & Defects */}
-      <View style={styles.row}>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Plan DT</Text>
-          <TextInput style={styles.input} value={planDt} onChangeText={setPlanDt} keyboardType="numeric" placeholder="Mins"/>
-        </View>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Unplan DT</Text>
-          <TextInput style={styles.input} value={unplanDt} onChangeText={setUnplanDt} keyboardType="numeric" placeholder="Mins"/>
-        </View>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Defect Qty</Text>
-          <TextInput style={styles.input} value={defectQty} onChangeText={setDefectQty} keyboardType="number-pad" placeholder="Qty"/>
-        </View>
-      </View>
-
-      <View style={styles.formGroup}>
-        <Text style={styles.label}>Remarks</Text>
-        <TextInput style={[styles.input, styles.textArea]} value={remarks} onChangeText={setRemarks} multiline numberOfLines={3} placeholder="Enter Remarks"/>
-      </View>
-
-      <View style={styles.row}>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Employee Name(ID)</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: '#e5e7eb' }]}
-            value={`${operatorName} - ${operatorId}`}
-            editable={false}
-          />
-        </View>
-        <View style={styles.formGroupRow}>
-          <Text style={styles.label}>Team</Text>
-          <TextInput style={[styles.input, { backgroundColor: '#e5e7eb' }]} value={team} editable={false} />
-        </View>
-      </View>
-
-      <View style={styles.buttonContainer}>
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={[styles.submitButton, { flex: 1, marginRight: 8 }]} onPress={handleSubmit}>
-            <Text style={styles.submitButtonText}>{submitButtonText}</Text>
-          </TouchableOpacity>
-
-          {onClear && (
-            <TouchableOpacity style={[styles.clearButton, { flex: 1, marginLeft: 8 }]} onPress={handleClear}>
-              <Text style={styles.clearButtonText}>Clear Form</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {onCancel && (
-          <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -528,7 +545,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  modelContainer: { // Added style definition for modelContainer
+  modelContainer: { 
     marginBottom: 8,
   },
   modelRow: {

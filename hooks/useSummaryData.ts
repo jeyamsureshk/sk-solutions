@@ -107,7 +107,11 @@ export function useSummaryData(selectedDate: SelectedDate, period: PeriodType) {
             teamRecords.forEach(record => {
               if (record.item && Array.isArray(record.item)) {
                 record.item.forEach((item: { model: string; quantity: string | number }) => {
-                  if (item.model && item.quantity) {
+                  if (
+  item.model &&
+  item.quantity !== null &&
+  item.quantity !== undefined
+) {
                     const normalizedModel = normalizeModelName(item.model);
                     const quantity =
                       typeof item.quantity === 'string'

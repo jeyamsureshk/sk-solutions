@@ -10,6 +10,7 @@ import { usePlanInput } from '@/hooks/usePlanInput';
 import { captureRef } from 'react-native-view-shot'; 
 import * as Sharing from 'expo-sharing';
 import { Edit2, Trash2, Share2 } from 'lucide-react-native';
+import PlanVsActualScreen from '@/components/PlanVsActualScreen';
 
 interface SummaryCardProps {
   title: string;
@@ -105,7 +106,7 @@ export default function SummaryCard({
     const parts = dateStr.split('-');
     if (parts.length !== 3) return dateStr; 
     
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const months = ["Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ", "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec "];
     const day = parts[2];
     const month = months[parseInt(parts[1], 10) - 1];
     
@@ -276,8 +277,12 @@ const formatDateDisplay = (date: Date) => {
                 collapsable={false} 
               >
                 <View style={styles.teamHeader}>
+                  {/* Dynamic text alignment based on active tab */}
                   <Text
-                    style={styles.teamName}
+                    style={[
+                      styles.teamName, 
+                      activeTab === 'plan' ? { textAlign: 'center', flex: 1, marginRight: -60 } : {}
+                    ]}
                     onPress={() => setSelectedTeamIndex(isSelected ? null : index)}
                   >
                     {teamSummary.team}
@@ -325,9 +330,10 @@ const formatDateDisplay = (date: Date) => {
                     {isExpanded && (
                       <View style={styles.modelList}>
                         {teamSummary.modelSummaries
-                          .slice() 
-                          .sort((a, b) => a.model.localeCompare(b.model)) 
-                          .map((model, modelIndex) => (
+  .filter(model => model.totalQuantity > 0)
+  .slice()
+  .sort((a, b) => a.model.localeCompare(b.model))
+  .map((model, modelIndex) => (
                             <View key={modelIndex} style={styles.modelItem}>
                               <Text style={styles.modelName}>{model.model}</Text>
                               <View style={styles.modelStats}>
@@ -410,10 +416,11 @@ const formatDateDisplay = (date: Date) => {
                           <Text style={styles.headerText}>Pending</Text>
                           <Text style={styles.headerText}>Status</Text>
                         </View>
-                        {teamSummary.modelSummaries
-                          .slice()
-                          .sort((a, b) => a.model.localeCompare(b.model))
-                          .map((model, modelIndex) => {
+                       {teamSummary.modelSummaries
+  .filter(model => model.totalQuantity > 0)
+  .slice()
+  .sort((a, b) => a.model.localeCompare(b.model))
+  .map((model, modelIndex) => {
                             const key = model.model;
                             const rawInputValue = fqcInputs[key];
                             const fqcInputNumber = typeof rawInputValue === 'number' ? rawInputValue : parseInt(String(rawInputValue)) || 0;
@@ -454,114 +461,19 @@ const formatDateDisplay = (date: Date) => {
                     )}
                   </>
                 )}
-
-               {activeTab === 'plan' && (
-  <>
-    {isExpanded && teamSummary.modelSummaries && teamSummary.modelSummaries.length > 0 && (
-      <View style={styles.modelList}>
-        
-        {/* Date Header Container */}
-        <View style={styles.planDateHeader}>
-          <Text style={styles.planDateText}>
-            Plan Date: {formatDateDisplay(selectedDate)}
-          </Text>
-        </View>
-
-        {/* Table Header Container */}
-        <View style={styles.tableHeader}>
-          <Text style={[styles.headerText, { flex: 0.5, fontSize: 10 }]}>S.No</Text>
-          <Text style={[styles.headerText, { flex: 1.4, textAlign: 'left', fontSize: 10 }]}>Model Name</Text>
-          <Text style={[styles.headerText, { flex: 0.6, fontSize: 10 }]}>Plan</Text>
-          <Text style={[styles.headerText, { flex: 0.6, fontSize: 10 }]}>Actual</Text>
-          <Text style={[styles.headerText, { flex: 1.9, fontSize: 10 }]}>Remarks</Text>
-          <Text style={[styles.headerText, { flex: 0.6, fontSize: 10 }]}>ETA</Text>
-        </View>
-                        
-                        {teamSummary.modelSummaries.slice().sort((a, b) => a.model.localeCompare(b.model)).map((model, modelIndex) => {
-                          const key = model.model;
-                          const currentPlan = planData[key] || { plan_qty: 0, remarks: '', eta: '' };
-                          const actual = model.totalQuantity; 
-
-                          const isCompleted = currentPlan.plan_qty > 0 && actual >= currentPlan.plan_qty;
-                          const displayRemark = currentPlan.remarks || (isCompleted ? 'Completed' : '');
-                          const placeholderText = isCompleted ? 'Completed' : 'Remarks';
-
-                          return (
-                            <View key={modelIndex} style={[styles.modelItem, { alignItems: 'flex-start' }]}>
-                              <Text style={[styles.tableCell, { flex: 0.5, marginTop: 4, fontSize: 10 }]}>{modelIndex + 1}</Text>
-                              <Text style={[styles.modelNameCell, { flex: 1.4, marginTop: 4, fontSize: 10 }]} numberOfLines={2}>
-                                {model.model}
-                              </Text>
-                              
-                              <View style={[styles.tableCell, { flex: 0.6, marginTop: 4 }]}>
-                                {period === 'day' ? (
-                                  <TextInput
-                                    style={[styles.tableInput, { fontSize: 10 }]}
-                                    keyboardType="numeric"
-                                    value={currentPlan.plan_qty ? String(currentPlan.plan_qty) : ""}
-                                    onChangeText={(text) => {
-                                      const newValue = text === '' ? 0 : parseInt(text.replace(/[^0-9]/g, '')) || 0;
-                                      updatePlan(key, 'plan_qty', newValue);
-                                    }}
-                                    placeholder="0"
-                                    placeholderTextColor="#9ca3af"
-                                  />
-                                ) : (
-                                  <Text style={[styles.tableCell, { fontSize: 10 }]}>{currentPlan.plan_qty.toLocaleString()}</Text>
-                                )}
-                              </View>
-
-                              <Text style={[styles.tableCell, { flex: 0.6, marginTop: 4, fontSize: 10 }]}>{actual.toLocaleString()}</Text>
-
-                              <View style={[styles.tableCell, { flex: 1.9 }]}>
-                                {period === 'day' ? (
-                                  <TextInput
-                                    style={[styles.tableInput, { textAlign: 'center', minHeight: 24, textAlignVertical: 'top', fontSize: 8.5 }]}
-                                    value={displayRemark}
-                                    onChangeText={(text) => updatePlan(key, 'remarks', text)}
-                                    placeholder={placeholderText}
-                                    placeholderTextColor="#9ca3af"
-                                    multiline={true} 
-                                  />
-                                ) : (
-                                  <Text style={[styles.tableCell, { textAlign: 'left', marginTop: 4, fontSize: 8.5 }]} numberOfLines={undefined}>
-                                    {displayRemark || '-'}
-                                  </Text>
-                                )}
-                              </View>
-
-                            <View style={[styles.tableCell, { flex: 0.6, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }]}>
-  {period === 'day' ? (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <TouchableOpacity onPress={() => setEtaPickerModel(key)}>
-        <Text style={[styles.tableInput, { color: currentPlan.eta ? '#374151' : '#9ca3af', fontSize: 8.5 }]}>
-          {formatEtaDate(currentPlan.eta) || '-'}
-        </Text>
-      </TouchableOpacity>
-      
-      {/* 🔥 ADDED: Close/Delete Icon to clear the date */}
-      {currentPlan.eta ? (
-        <TouchableOpacity 
-          onPress={() => updatePlan(key, 'eta', '')} 
-          style={{ marginLeft: 2 }}
-        >
-          <Icon name="close" size={10} color="#EF4444" />
-        </TouchableOpacity>
-      ) : null}
-    </View>
-  ) : (
-    <Text style={[styles.tableCell, { marginTop: 4, fontSize: 10 }]} numberOfLines={1}>
-      {formatEtaDate(currentPlan.eta) || '-'}
-    </Text>
-  )}
-</View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </>
-                )}
+{activeTab === 'plan' && isExpanded && (
+  <PlanVsActualScreen
+    teamSummary={teamSummary}
+    selectedDate={selectedDate}
+    period={period}
+    planData={planData}
+    updatePlan={updatePlan}
+    etaPickerModel={etaPickerModel}
+    setEtaPickerModel={setEtaPickerModel}
+    formatEtaDate={formatEtaDate}
+    formatDateDisplay={formatDateDisplay}
+  />
+)}
               </View>
             );
           })}
@@ -727,8 +639,8 @@ const styles = StyleSheet.create({
   },
   teamName: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
+    fontWeight: '800',
+    color: '#0aa',
   },
   teamStats: {
     flexDirection: 'row',

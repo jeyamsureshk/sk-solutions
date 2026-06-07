@@ -24,7 +24,7 @@ import { useItems } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
 
 // --- CONFIGURATION ---
-const GEMINI_API_KEY = "";
+const GEMINI_API_KEY = "AIzaSyA-k1vvlPPCpc_Ma_9SNZRV69iTRD9gIhE";
 interface ProductionFormProps {
   onSubmit: (data: ProductionRecordInsert) => Promise<{ success: boolean; error?: any }>;
   onCancel?: () => void;
@@ -579,7 +579,7 @@ const scrollDropdown = (direction: 'up' | 'down') => {
             const totalProduced = entry.models.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
             
             return (
-              <View key={entry.id} style={styles.card}>
+              <View key={entry.id} style={[styles.card, { zIndex: 1000 - index, elevation: 1000 - index, overflow: 'visible' }]}>
                   <View style={styles.cardHeader}>
                       <View style={styles.cardTitleRow}>
                          <View style={styles.badge}>
@@ -655,92 +655,123 @@ const scrollDropdown = (direction: 'up' | 'down') => {
                              </View>
                           </View>
 
-                          {entry.models.map((modelItem, mIndex) => (
-                              <View key={mIndex} style={styles.modelRowContainer}>
-                                  <View style={styles.modelRow}>
-                                      <TextInput
-                                          style={[styles.baseInput, styles.modelNameInput]}
-                                          value={modelItem.model}
-                                          placeholder="Model Name"
-                                          placeholderTextColor="#cbd5e1"
-                                          onChangeText={(text) => updateModel(index, mIndex, 'model', text)}
-                                          onFocus={() => {
-                                              setActiveEntryIndex(index);
-                                              setActiveModelIndex(mIndex);
-                                              setDropdownVisible(false);
-                                          }}
-                                      />
-                                      <TextInput
-                                          style={[styles.baseInput, styles.qtyInput]}
-                                          value={modelItem.quantity?.toString() || ''} 
-                                          placeholder="Qty"
-                                          placeholderTextColor="#cbd5e1"
-                                          keyboardType="number-pad"
-                                          onChangeText={(text) => {
-                                              updateModel(index, mIndex, 'quantity', text);
-                                          }}
-                                      />
-                                      {entry.models.length > 1 ? (
-                                          <TouchableOpacity onPress={() => removeModelRow(index, mIndex)} style={styles.removeModelBtn}>
-                                              <X size={18} color="#94a3b8" />
-                                          </TouchableOpacity>
-                                      ) : (
-                                        <View style={styles.removeModelPlaceholder} />
-                                      )}
-                                  </View>
+                          {entry.models.map((modelItem, mIndex) => {
+  const isActiveDropdown =
+    dropdownVisible &&
+    activeEntryIndex === index &&
+    activeModelIndex === mIndex;
 
-                                  {/* Dropdown Logic */}
-                                  {dropdownVisible && activeEntryIndex === index && activeModelIndex === mIndex && (
-                                    <View style={styles.dropdownContainer}>
-                                      <View style={styles.dropdownWrapper}>
-                                        <ScrollView 
-                                          ref={dropdownScrollRef}
-                                          style={styles.dropdownScroll} 
-                                          nestedScrollEnabled={true} 
-                                          keyboardShouldPersistTaps="handled"
-                                          showsVerticalScrollIndicator={false}
-                                          onScroll={(event) => {
-                                            setCurrentScrollY(event.nativeEvent.contentOffset.y);
-                                          }}
-                                          scrollEventThrottle={16} 
-                                        >
-                                          {filteredItems.map((item, idx) => (
-                                            <TouchableOpacity
-                                              key={idx}
-                                              style={styles.dropdownItem}
-                                              onPress={() => {
-                                                updateModel(index, mIndex, 'model', item.model);
-                                                setDropdownVisible(false);
-                                              }}
-                                            >
-                                              <Text style={styles.dropdownText}>
-                                                <Text style={{fontWeight: 'bold'}}>{item.part_id}</Text> : {item.description}
-                                              </Text>
-                                            </TouchableOpacity>
-                                          ))}
-                                        </ScrollView>
+  return (
+    <View
+      key={mIndex}
+      style={[
+        styles.modelRowContainer,
+        {
+          zIndex: 100 - mIndex,
+          elevation: 100 - mIndex,
+        },
+      ]}
+    >
+      <View style={styles.modelRow}>
+        <TextInput
+          style={[styles.baseInput, styles.modelNameInput]}
+          value={modelItem.model}
+          placeholder="Model Name"
+          placeholderTextColor="#cbd5e1"
+          onChangeText={(text) =>
+            updateModel(index, mIndex, 'model', text)
+          }
+          onFocus={() => {
+            setActiveEntryIndex(index);
+            setActiveModelIndex(mIndex);
+          }}
+        />
 
-                                        {/* Manual Scroll Controls */}
-                                        <View style={styles.scrollControls}>
-                                          <TouchableOpacity 
-                                            style={styles.arrowButton} 
-                                            onPress={() => scrollDropdown('up')}
-                                          >
-                                            <ChevronUp size={20} color="#2563eb" />
-                                          </TouchableOpacity>
-                                          
-                                          <TouchableOpacity 
-                                            style={styles.arrowButton} 
-                                            onPress={() => scrollDropdown('down')}
-                                          >
-                                            <ChevronDown size={20} color="#2563eb" />
-                                          </TouchableOpacity>
-                                        </View>
-                                      </View>
-                                    </View>
-                                  )}
-                              </View>
-                          ))}
+        <TextInput
+          style={[styles.baseInput, styles.qtyInput]}
+          value={modelItem.quantity?.toString() || ''}
+          placeholder="Qty"
+          placeholderTextColor="#cbd5e1"
+          keyboardType="number-pad"
+          onChangeText={(text) =>
+            updateModel(index, mIndex, 'quantity', text)
+          }
+        />
+
+        {entry.models.length > 1 ? (
+          <TouchableOpacity
+            onPress={() => removeModelRow(index, mIndex)}
+            style={styles.removeModelBtn}
+          >
+            <X size={18} color="#94a3b8" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.removeModelPlaceholder} />
+        )}
+      </View>
+
+      {isActiveDropdown && (
+        <View style={styles.dropdownContainer}>
+          <View style={styles.dropdownWrapper}>
+            <ScrollView
+              ref={dropdownScrollRef}
+              style={styles.dropdownScroll}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              onScroll={(event) => {
+                setCurrentScrollY(
+                  event.nativeEvent.contentOffset.y
+                );
+              }}
+              scrollEventThrottle={16}
+            >
+              {filteredItems.map((item, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    updateModel(
+                      index,
+                      mIndex,
+                      'model',
+                      item.model
+                    );
+                    setDropdownVisible(false);
+                  }}
+                >
+                  <Text style={styles.dropdownText}>
+                    <Text style={{ fontWeight: 'bold' }}>
+                      {item.part_id}
+                    </Text>
+                    {' : '}
+                    {item.description}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.scrollControls}>
+              <TouchableOpacity
+                style={styles.arrowButton}
+                onPress={() => scrollDropdown('up')}
+              >
+                <ChevronUp size={20} color="#2563eb" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.arrowButton}
+                onPress={() => scrollDropdown('down')}
+              >
+                <ChevronDown size={20} color="#2563eb" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+})}
 
                           <TouchableOpacity style={styles.addModelBtn} onPress={() => addModelRow(index)}>
                               <Plus size={16} color="#2563eb" />
@@ -993,7 +1024,6 @@ const styles = StyleSheet.create({
   // --- CARDS ---
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -1001,8 +1031,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-    overflow: 'hidden',
+    overflow: 'visible',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -1013,6 +1046,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   cardTitleRow: {
     flexDirection: 'row',
@@ -1130,8 +1165,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   modelRowContainer: {
-    zIndex: 20, 
-  },
+  position: 'relative',
+},
   modelRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1184,18 +1219,20 @@ const styles = StyleSheet.create({
 
   // --- DROPDOWN ---
   dropdownContainer: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderRadius: 8,
-    elevation: 5,
-    zIndex: 9999,
-    maxHeight: 168,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
+  position: 'absolute',
+  top: 52,
+  left: 0,
+  right: 0,
+  backgroundColor: '#fff',
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#e5e7eb',
+
+  zIndex: 99999,
+  elevation: 99999,
+
+  maxHeight: 180,
+},
   dropdownWrapper: {
     flexDirection: 'row', 
   },

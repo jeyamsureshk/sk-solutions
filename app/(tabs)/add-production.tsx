@@ -10,6 +10,7 @@ import {
   Text,
   Animated,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import ProductionForm from '@/components/ProductionForm';
@@ -115,19 +116,20 @@ export default function AddRecordScreen() {
           </Text>
         </Animated.View>
 
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-        >
-          <ProductionForm
-            key={formKey}
-            onSubmit={handleSubmit}
-            submitButtonText="Add Record"
-            onClear={handleClear}
-          />
-        </ScrollView>
+       <KeyboardAwareScrollView
+  enableOnAndroid
+  extraScrollHeight={40}
+  keyboardShouldPersistTaps="handled"
+  showsVerticalScrollIndicator={false}
+  contentContainerStyle={styles.scrollContent}
+>
+  <ProductionForm
+    key={formKey}
+    onSubmit={handleSubmit}
+    submitButtonText="Add Record"
+    onClear={handleClear}
+  />
+</KeyboardAwareScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -147,14 +149,18 @@ container: {
     paddingTop: 0,    // Force 0 top padding
     paddingBottom: 20,
   },
-  // Reduce the 'top' value of the tip box so it doesn't push content
   keyboardBoxTop: {
     position: 'absolute',
-    top: 0, // Move to the very top
-    left: 0,
-    right: 0,
-    borderRadius: 0, // Make it flush with the header
+    top: Platform.OS === 'ios' ? 12 : 8,
+    left: 16,
+    right: 16,
+    marginBottom: 4,
+    backgroundColor: '#2563eb',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
     zIndex: 999,
+    elevation: 5,
   },
   keyboardBoxText: {
     color: '#ffffff',
