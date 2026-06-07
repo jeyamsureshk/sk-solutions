@@ -24,7 +24,7 @@ import { useItems } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
 
 // --- CONFIGURATION ---
-const GEMINI_API_KEY = "AIzaSyA-k1vvlPPCpc_Ma_9SNZRV69iTRD9gIhE";
+const GEMINI_API_KEY = "";
 interface ProductionFormProps {
   onSubmit: (data: ProductionRecordInsert) => Promise<{ success: boolean; error?: any }>;
   onCancel?: () => void;
