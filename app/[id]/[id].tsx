@@ -71,23 +71,39 @@ export default function ChatScreen() {
   const notifAnim = useRef(new Animated.Value(-150)).current; 
 
   // --- NEW: Track Keyboard Visibility ---
-  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
-  useEffect(() => {
-    const showSubscription = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardVisible(true)
-    );
-    const hideSubscription = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardVisible(false)
-    );
+ useEffect(() => {
+  const showSubscription = Keyboard.addListener(
+    Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+    (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
+    }
+  );
 
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
+  const hideSubscription = Keyboard.addListener(
+    Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+    () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    }
+  );
+
+  return () => {
+    showSubscription.remove();
+    hideSubscription.remove();
+  };
+}, []);
+
+useEffect(() => {
+  if (isKeyboardVisible) {
+    setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  }
+}, [isKeyboardVisible]);
   // --------------------------------------
 
   const showNewMessageNotification = (msgContent: string) => {
@@ -404,11 +420,7 @@ export default function ChatScreen() {
         </View>
       </Animated.View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} 
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0} 
-      >
+      <View style={{ flex: 1 }}>
         <FlatList
           ref={listRef}
           data={listItems}
@@ -420,15 +432,24 @@ export default function ChatScreen() {
           keyboardDismissMode="interactive"
         />
 
+
         {/* INPUT CONTAINER FIX: Conditional Padding */}
-        <View style={[
-            styles.inputContainer, 
-            { 
-                paddingBottom: isKeyboardVisible 
-                    ? 10  // If keyboard is OPEN, use small padding
-                    : Math.max(insets.bottom, 15) // If CLOSED, use safe area
-            }
-        ]}>
+        <View
+  style={[
+    styles.inputContainer,
+    {
+      marginBottom:
+        Platform.OS === 'android'
+          ? keyboardHeight
+          : 0,
+
+      paddingBottom:
+        isKeyboardVisible
+          ? 10
+          : Math.max(insets.bottom, 15),
+    },
+  ]}
+>
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.textInput}
@@ -447,7 +468,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Modal */}
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>

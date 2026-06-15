@@ -154,12 +154,17 @@ export default function ProfileScreen() {
   }, [payrollFiles]);
 
   // --- CALCULATIONS LOGIC (Linked to selectedMonthIndex) ---
+ // --- CALCULATIONS LOGIC (Linked to selectedMonthIndex) ---
+  // --- CALCULATIONS LOGIC (Linked to selectedMonthIndex) ---
   const salaryCalculations = useMemo(() => {
     const grossBase = Number(salaryData.userGrossInput) || 0;
     
-    // Pick relevant OT records based on selector
+    // Pick relevant OT and Attendance records based on selector
     const allOtRecords = [otM1, otM2, otM3, otM4, otM5, otM6];
     const targetOtRecords = allOtRecords[selectedMonthIndex] || [];
+
+    const allAttRecords = [attM1, attM2, attM3, attM4, attM5, attM6];
+    const targetAttRecords = allAttRecords[selectedMonthIndex] || [];
 
     const approvedOtHours = targetOtRecords
       .filter(record => record.approved === true)
@@ -168,28 +173,52 @@ export default function ProfileScreen() {
     const hourlyRate = (grossBase / 26 / 8);
     const otAmount = Math.round(approvedOtHours * hourlyRate * 1);
 
-    const basic = Math.round(15365);
-    const hra = Math.round(basic* .3065);
-    const conveyance = Math.round(grossBase * 0);
-    const special = Math.round(grossBase * 0);
+    // Fixed Earnings based on verified payslip logic
+    const basic = 15365;
+    const hra = Math.round(basic * 0.3065); // Equals 4709
     
-    const totalGross = basic + hra + conveyance + special + otAmount;
+    // LOP (Loss of Pay) Calculation - ONLY counts explicit "absent" records
+    const absentDays = targetAttRecords.reduce((sum, record) => {
+      const dayOfWeek = new Date(record.date).getDay();
+      
+      // Skip weekends from LOP calculation
+      if (dayOfWeek === 0 || dayOfWeek === 6) return sum; 
 
-    const pf = Math.round(basic * 0.12-44);
-    const esi = Math.ceil(totalGross * 0.0075);
+      const status = (record.status || '').toLowerCase();
+      if (status === 'absent' || status === 'lop') {
+        return sum + 1; // Full day absent
+      } else if (status === 'half-absent' || status === 'half_absent') {
+        return sum + 0.5; // Half day absent
+      }
+      return sum;
+    }, 0);
+    
+    const dailyRate = grossBase / 22; 
+    const lopAmount = Math.round(absentDays * dailyRate);
+
+    // Total Gross (Base components + OT - LOP)
+    const totalGross = basic + hra + otAmount - lopAmount;
+
+    // Deductions
+    const pf = 1800; // Capped at ₹15,000 * 12%
+    const esi = Math.ceil(Math.max(0, totalGross) * 0.0075);
     const pt = Number(salaryData.profTax) || 0;
     const trans = Number(salaryData.transport) || 0;
     const totalDeductions = pf + esi + pt + trans;
 
     return {
-      earnings: { basic, hra, conveyance, special, overtime: otAmount, otHours: approvedOtHours },
-      deductions: { pf, esi, pt, trans },
+      earnings: { basic, hra, overtime: otAmount, otHours: approvedOtHours },
+      deductions: { pf, esi, pt, trans, lop: lopAmount, absentDays },
       totalGross,
       totalDeductions,
       netSalary: totalGross - totalDeductions
     };
-  }, [salaryData, otM1, otM2, otM3, otM4, otM5, otM6, selectedMonthIndex]);
-
+  }, [
+    salaryData, 
+    otM1, otM2, otM3, otM4, otM5, otM6, 
+    attM1, attM2, attM3, attM4, attM5, attM6, 
+    selectedMonthIndex
+  ]);
   const fetchProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -395,7 +424,7 @@ const handleDeleteDocument = (fileName: string) => {
 
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Salary Configuration</Text></View>
         
-        <View style={styles.salaryCard}>
+<View style={styles.salaryCard}>
           {/* MONTH SELECTOR FOR SALARY */}
           <Text style={styles.salaryLabel}>SELECT MONTH TO VIEW CALCULATION</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthSelectorScroll}>
@@ -459,20 +488,12 @@ const handleDeleteDocument = (fileName: string) => {
           
           <Text style={styles.salarySubHeader}>EARNINGS FOR {historyData[selectedMonthIndex]?.label.toUpperCase()}</Text>
           <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>Basic (36.93%)</Text>
+            <Text style={styles.salaryLabel}>Basic Pay</Text>
             <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.basic.toLocaleString()}</Text>
           </View>
           <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>HRA (18.46%)</Text>
+            <Text style={styles.salaryLabel}>HRA (30.65%)</Text>
             <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.hra.toLocaleString()}</Text>
-          </View>
-          <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>Conveyance (9.33%)</Text>
-            <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.conveyance.toLocaleString()}</Text>
-          </View>
-          <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>Special Allowance (35.28%)</Text>
-            <Text style={styles.salaryValue}>₹{salaryCalculations.earnings.special.toLocaleString()}</Text>
           </View>
 
           {/* DYNAMIC OT ROW */}
@@ -487,12 +508,24 @@ const handleDeleteDocument = (fileName: string) => {
           <View style={styles.sectionDivider} />
           
           <Text style={[styles.salarySubHeader, { color: COLORS.error }]}>DEDUCTIONS FOR {historyData[selectedMonthIndex]?.label.toUpperCase()}</Text>
+          
+          {/* CONDITIONAL LOP ROW */}
+          {salaryCalculations.deductions.absentDays > 0 && (
+            <View style={styles.salaryRow}>
+              <View>
+                <Text style={styles.salaryLabel}>Loss of Pay (LOP)</Text>
+                <Text style={{fontSize: 9, color: COLORS.secondary}}>{salaryCalculations.deductions.absentDays} Absent Days</Text>
+              </View>
+              <Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{salaryCalculations.deductions.lop.toLocaleString()}</Text>
+            </View>
+          )}
+
           <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>PF (12% of Basic)</Text>
+            <Text style={styles.salaryLabel}>PF (Capped)</Text>
             <Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{salaryCalculations.deductions.pf.toLocaleString()}</Text>
           </View>
           <View style={styles.salaryRow}>
-            <Text style={styles.salaryLabel}>ESI (0.75% of Gross)</Text>
+            <Text style={styles.salaryLabel}>ESI (0.75%)</Text>
             <Text style={[styles.salaryValue, { color: COLORS.error }]}>- ₹{salaryCalculations.deductions.esi.toLocaleString()}</Text>
           </View>
           <View style={styles.salaryRow}>

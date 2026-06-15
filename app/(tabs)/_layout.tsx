@@ -17,7 +17,8 @@ import {
   Mail, 
   Timer, 
   BookOpen, 
-  Lock 
+  Lock,
+  MessageSquare // Added for the new messages tab
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
@@ -29,6 +30,8 @@ export default function TabLayout() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [userId, setUserId] = useState<string | null>(null);
+  
+  // This hook now provides REAL-TIME updates to totalUnread
   const { totalUnread } = useTotalUnreadCount(userId || undefined);
   
   // Password Modal State
@@ -82,7 +85,6 @@ export default function TabLayout() {
             backgroundColor: '#ffffff',
             borderTopWidth: 1,
             borderTopColor: '#e5e7eb',
-            // Dynamic height based on safe area insets (bottom buttons)
             height: Platform.OS === 'android' ? 65 + insets.bottom : 60 + insets.bottom,
             paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
             paddingTop: 8,
@@ -145,7 +147,7 @@ export default function TabLayout() {
           name="study-materials"
           options={{
             title: 'Study Materials',
-            tabBarLabel: 'Study Materials',
+            tabBarLabel: 'Reference', // Shortened label slightly to prevent crowding the tab bar
             tabBarIcon: ({ size, color }) => <BookOpen size={size} color={color} />,
             headerRight: () => (
               <View style={{ flexDirection: 'row', marginRight: 16 }}>
@@ -160,24 +162,34 @@ export default function TabLayout() {
           }}
         />
 
+        {/* --- NEW MESSAGES TAB --- */}
+        <Tabs.Screen
+          name="messages"
+          options={{
+            title: 'Messages',
+            tabBarLabel: 'Messages',
+            tabBarIcon: ({ size, color }) => (
+              <View>
+                <Mail size={size} color={color} />
+                {totalUnread > 0 && (
+                  <View style={[styles.badge, { top: -4, right: -8 }]}>
+                    <Text style={styles.badgeText}>
+                      {totalUnread > 99 ? '99+' : totalUnread.toString()}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ),
+          }}
+        />
+
         <Tabs.Screen
           name="profile"
           options={{
             title: 'Profile',
             tabBarLabel: 'Profile',
             tabBarIcon: ({ size, color }) => <User size={size} color={color} />,
-            headerRight: () => (
-              <TouchableOpacity onPress={() => router.push('/messages')} style={{ marginRight: 16 }}>
-                <Mail size={27} color="#fff" />
-                {totalUnread > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                      {totalUnread > 99 ? '99+' : totalUnread.toString()}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ),
+            // Removed headerRight from here since the messages are now a dedicated tab
           }}
         />
       </Tabs>
@@ -235,14 +247,13 @@ const styles = StyleSheet.create({
   headerBtnText: { color: '#ffffff', fontSize: 16 },
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
     backgroundColor: '#ef4444',
     borderRadius: 8,
-    width: 16,
+    minWidth: 16, // Changed to minWidth so "99+" fits perfectly
     height: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 4, // Added padding so double digits don't touch the edges
   },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   modalOverlay: {
