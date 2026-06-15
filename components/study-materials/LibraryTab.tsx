@@ -203,7 +203,7 @@ export default function LibraryTab({ searchQuery }: LibraryTabProps) {
               </View>
               <View>
                 <Text style={styles.modalText}>Edit Entry</Text>
-                <Text style={styles.modalSubText}>Change titles or categories</Text>
+                <Text style={styles.modalSubText}>Change titles or categories ^</Text>
               </View>
             </TouchableOpacity>
 
@@ -213,7 +213,7 @@ export default function LibraryTab({ searchQuery }: LibraryTabProps) {
               </View>
               <View>
                 <Text style={[styles.modalText, { color: THEME.error }]}>Delete Entry</Text>
-                <Text style={styles.modalSubText}>Remove permanently</Text>
+                <Text style={styles.modalSubText}>Remove permanently ^</Text>
               </View>
             </TouchableOpacity>
 

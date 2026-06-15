@@ -97,6 +97,14 @@ export default function TabLayout() {
             title: 'Dashboard',
             tabBarLabel: 'Dashboard',
             tabBarIcon: ({ size, color }) => <BarChart3 size={size} color={color} />,
+             headerRight: () => (
+              <View style={{ flexDirection: 'row', marginRight: 16 }}>
+                <TouchableOpacity onPress={() => router.push('/study-materials')} style={styles.headerBtn}>
+                <BookOpen size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Text style={styles.headerBtnText}>Refrences</Text>
+                </TouchableOpacity>
+              </View>
+            ),
           }}
         />
 

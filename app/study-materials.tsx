@@ -1,3 +1,4 @@
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import React, {
   useState,
   useEffect,
@@ -13,8 +14,9 @@ import {
   BackHandler,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  Alert,
 } from 'react-native';
-
 import {
   useFocusEffect,
   useRouter,
@@ -49,6 +51,11 @@ export default function StudyMaterialsScreen() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
   const [activeTab, setActiveTab] = useState<'local' | 'web' | 'resistor'>('local');
+const [passwordVisible, setPasswordVisible] = useState(false);
+const [passwordAction, setPasswordAction] = useState<'add' | 'delete'>('add');
+const [inputPassword, setInputPassword] = useState('');
+
+const ADMIN_PASSWORD = '787374';
 
   // SEARCH DEBOUNCE
   useEffect(() => {
@@ -76,7 +83,7 @@ export default function StudyMaterialsScreen() {
         }
 
         // DEFAULT BACK
-        router.replace('/study-materials');
+        router.replace('/');
         return true;
       };
 
@@ -88,12 +95,45 @@ export default function StudyMaterialsScreen() {
       return () => subscription.remove();
     }, [activeTab])
   );
+const handlePasswordSubmit = () => {
+  if (inputPassword !== ADMIN_PASSWORD) {
+    Alert.alert('Access Denied', 'Incorrect Password');
+    setInputPassword('');
+    return;
+  }
+
+  setPasswordVisible(false);
+  setInputPassword('');
+
+  if (passwordAction === 'add') {
+    router.push('/study-materials/add');
+  } else {
+    router.push('/study-materials/delete');
+  }
+};
 
   return (
+ <SafeAreaProvider>
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#000" }}>
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+<View style={styles.header}>
+  <Text style={styles.headerTitle}>References</Text>
+
+  <View style={styles.headerButtons}>
+    <TouchableOpacity
+      style={styles.addBtn}
+      onPress={() => {
+        setPasswordAction('add');
+        setPasswordVisible(true);
+      }}
+    >
+      <Text style={styles.btnText}>+ Add Refrence</Text>
+    </TouchableOpacity>
+  </View>
+</View>
       {/* SEARCH + TABS */}
       <View style={styles.searchContainer}>
         {/* SEARCH BAR */}
@@ -112,6 +152,7 @@ export default function StudyMaterialsScreen() {
             onChangeText={setSearchQuery}
           />
         </View>
+
 
         {/* TAB BUTTONS */}
         <View style={styles.tabContainer}>
@@ -183,7 +224,57 @@ export default function StudyMaterialsScreen() {
           <ResistorTab />
         )}
       </View>
+<Modal
+  transparent
+  visible={passwordVisible}
+  animationType="fade"
+  onRequestClose={() => setPasswordVisible(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContent}>
+      <Text style={styles.modalTitle}>
+        Admin Verification
+      </Text>
+
+      <Text style={styles.modalSubtitle}>
+        Enter password to {passwordAction} materials
+      </Text>
+
+      <TextInput
+        style={styles.passwordInput}
+        secureTextEntry
+        value={inputPassword}
+        onChangeText={setInputPassword}
+        placeholder="Enter Password"
+        keyboardType="numeric"
+      />
+
+      <View style={styles.modalButtons}>
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={() => {
+            setPasswordVisible(false);
+            setInputPassword('');
+          }}
+        >
+          <Text>Cancel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.confirmBtn}
+          onPress={handlePasswordSubmit}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700' }}>
+            Verify
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+</Modal>
     </KeyboardAvoidingView>
+ </SafeAreaView>
+      </SafeAreaProvider>
   );
 }
 
@@ -278,4 +369,104 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+header: {
+  backgroundColor: '#fff',
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  borderBottomWidth: 1,
+  borderBottomColor: '#E2E8F0',
+},
+
+headerTitle: {
+  fontSize: 24,
+  fontWeight: '700',
+  color: THEME.primary,
+},
+
+headerButtons: {
+  flexDirection: 'row',
+},
+
+addBtn: {
+  backgroundColor: '#2563eb',
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: 8,
+  marginRight: 8,
+},
+
+deleteBtn: {
+  backgroundColor: '#ef4444',
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: 8,
+},
+
+btnText: {
+  color: '#fff',
+  fontWeight: '600',
+},
+
+modalOverlay: {
+  flex: 1,
+  backgroundColor: 'rgba(0,0,0,0.5)',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+
+modalContent: {
+  width: '85%',
+  backgroundColor: '#fff',
+  borderRadius: 16,
+  padding: 20,
+},
+
+modalTitle: {
+  fontSize: 20,
+  fontWeight: '700',
+  textAlign: 'center',
+  marginBottom: 10,
+},
+
+modalSubtitle: {
+  textAlign: 'center',
+  color: '#64748B',
+  marginBottom: 15,
+},
+
+passwordInput: {
+  borderWidth: 1,
+  borderColor: '#CBD5E1',
+  borderRadius: 10,
+  height: 50,
+  paddingHorizontal: 12,
+  marginBottom: 15,
+},
+
+modalButtons: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+},
+
+cancelBtn: {
+  flex: 1,
+  backgroundColor: '#F1F5F9',
+  height: 45,
+  borderRadius: 10,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 8,
+},
+
+confirmBtn: {
+  flex: 1,
+  backgroundColor: '#2563eb',
+  height: 45,
+  borderRadius: 10,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
 });
