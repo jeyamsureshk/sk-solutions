@@ -146,7 +146,7 @@ export default function CycleTimeScreen() {
       stages: stagesData,
       overall_average: overallAvg,
       cycles_per_hour: cyclesPerHour,
-    };
+    }; 
 
     // Save to database
     const result = isEditing && record

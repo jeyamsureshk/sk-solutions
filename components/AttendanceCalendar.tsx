@@ -73,7 +73,7 @@ const PatternBackground = ({ children }: { children: React.ReactNode }) => {
       <Animated.View style={[styles.patternCircle, styles.pcGreen, { transform: [{ translateX: driftX }, { translateY: driftY }] }]} />
       <Animated.View style={[styles.patternCircle, styles.pcRed, { transform: [{ translateX: driftY }, { translateY: driftX }] }]} />
       {children}
-    </View>
+    </View> 
   );
 };
 
