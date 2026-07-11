@@ -175,6 +175,80 @@ const getModelFinishTime = (target?: string, uph?: number | null) => {
 
   return `${hrs} hr ${mins} min`;
 };
+const getSuggestedTarget = (
+  currentIndex: number,
+  currentUph?: number | null
+) => {
+  if (!currentUph || currentUph <= 0) return '';
+
+  const TOTAL_MINUTES = 60;
+  let usedMinutes = 0;
+
+  // Calculate minutes already used by previous models
+  for (let i = 0; i < currentIndex; i++) {
+    const prev = models[i];
+
+    if (
+      prev.uph &&
+      prev.uph > 0 &&
+      prev.target &&
+      Number(prev.target) > 0
+    ) {
+      usedMinutes += (Number(prev.target) / prev.uph) * 60;
+    }
+  }
+
+  const remainingMinutes = Math.max(0, TOTAL_MINUTES - usedMinutes);
+
+  // Suggested quantity for remaining time
+  const suggestedQty = Math.floor((remainingMinutes / 60) * currentUph);
+
+  return suggestedQty.toString();
+};
+
+const getTotalEstimatedTargetTime = () => {
+  const totalMinutes = models.reduce((sum, item) => {
+    const target = Number(item.target || 0);
+    const uph = Number(item.uph || 0);
+
+    if (target > 0 && uph > 0) {
+      return sum + Math.ceil((target / uph) * 60);
+    }
+
+    return sum;
+  }, 0);
+
+  if (totalMinutes === 0) return '';
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  return mins === 0
+    ? `${hrs} hr`
+    : `${hrs} hr ${mins} min`;
+};
+
+const getTotalActualEstimatedTime = () => {
+  const totalMinutes = models.reduce((sum, item) => {
+    if (!item.uph || item.uph <= 0 || item.quantity <= 0) return sum;
+
+    return sum + Math.ceil((item.quantity / item.uph) * 60);
+  }, 0);
+
+  if (totalMinutes <= 0) return '0 min';
+
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  if (hrs === 0) return `${mins} min`;
+  if (mins === 0) return `${hrs} hr`;
+
+  return `${hrs} hr ${mins} min`;
+};
 
   const handleSubmit = async () => {
     const hourNum = parseFloat(hour);
@@ -336,13 +410,23 @@ item: models
         }
       }
 
-      setModels((currentModels) =>
-        currentModels.map((item, itemIndex) =>
-          itemIndex === index
-            ? { ...item, part_number: trimmedPartNumber.toUpperCase(), uph: uphValue }
-            : item
-        )
-      );
+     setModels((currentModels) => {
+  const updated = [...currentModels];
+
+  const suggestedTarget =
+    uphValue && !updated[index].target
+      ? getSuggestedTarget(index, uphValue)
+      : updated[index].target;
+
+  updated[index] = {
+    ...updated[index],
+    part_number: trimmedPartNumber.toUpperCase(),
+    uph: uphValue,
+    target: suggestedTarget,
+  };
+
+  return updated;
+});
     } catch (error) {
       console.error('Failed to fetch UPH:', error);
       setModels((currentModels) =>
@@ -559,24 +643,82 @@ item: models
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Target Units</Text>
-<TextInput
+<View
   style={[
     styles.input,
     {
-      backgroundColor: '#e5e7eb',
-      color: '#374151',
-      fontWeight: '600',
+      backgroundColor: '#fff',
+      height: 43,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingVertical: 4,
     },
   ]}
-  value={targetUnits === '' ? '0' : targetUnits}
-  editable={false}
-  selectTextOnFocus={false}
-/>
+>
+  <Text
+    style={{
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#1f1f1f', // Blue
+      lineHeight: 16,
+    }}
+  >
+    {targetUnits || 0}
+  </Text>
+
+  <Text
+    style={{
+      fontSize: 9,
+      fontWeight: '700',
+      color: '#2563eb', // Green
+      lineHeight: 10,
+      marginTop:3,
+    }}
+  >
+    {getTotalEstimatedTargetTime() || '0 min'}
+  </Text>
+</View>
             </View>
-            <View style={styles.formGroupRow}>
-              <Text style={styles.label}>Units Produced</Text>
-              <TextInput style={[styles.input, { backgroundColor: '#e5e7eb' }]} value={models.reduce((sum, item) => sum + (item.quantity || 0), 0).toString()} editable={false} />
-            </View>
+<View style={styles.formGroupRow}>
+  <Text style={styles.label}>Units Produced</Text>
+
+ <View
+  style={[
+    styles.input,
+    {
+      backgroundColor: '#fff',
+      height: 43,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingVertical: 4,
+    },
+  ]}
+>
+  <Text
+    style={{
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#374151',
+      lineHeight: 15,
+      color: '#1f1f1f',
+    }}
+  >
+    {models.reduce((sum, item) => sum + (item.quantity || 0), 0)}
+  </Text>
+
+  <Text
+    style={{
+      fontSize: 9,
+      fontWeight: '700',
+      color: '#10B981', // Green
+      lineHeight: 10,
+       marginTop:3,
+    }}
+  >
+    {getTotalActualEstimatedTime()}
+  </Text>
+</View>
+</View>
           </View>
 
           {/* Downtime & Defects */}
@@ -674,7 +816,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: '#ffffff',
-    color: '#1f2937',
+    color: '#1f1f1f',
     elevation: 2,
   },
   textArea: {
