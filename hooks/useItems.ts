@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 export interface Item {
   part_id: string;
   description: string;
+  model?: string;
 }
 
 export const useItems = () => {

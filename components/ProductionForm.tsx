@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  Modal,
-  Animated,
-  Easing,FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Trash2, Plus, X, RotateCcw, Camera, Clock, Users, Target, ChevronDown, ChevronUp } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { ProductionRecord, ProductionRecordInsert, Item } from '@/types/database';
-import { useOperators } from '@/hooks/useOperators';
-import { useTeams } from '@/hooks/useTeams';
-import { useItems } from '@/hooks/useItems';
+import { Trash2 } from 'lucide-react-native';
+import { ProductionRecord, ProductionRecordInsert } from '@/types/database';
+import { useItems, type Item } from '@/hooks/useItems';
+import { useCycleTime } from '@/hooks/useCycleTime';
 import { supabase } from '@/lib/supabase';
 
 interface ProductionFormProps {
@@ -31,6 +24,14 @@ interface ProductionFormProps {
   initialData?: ProductionRecord;
   submitButtonText?: string;
   onClear?: () => void;
+}
+
+interface ModelEntry {
+  model: string;
+  quantity: number;
+  part_number?: string;
+  uph?: number | null;
+  target?: string;
 }
 
 export default function ProductionForm({
@@ -46,7 +47,7 @@ export default function ProductionForm({
   // Form States
   const [date, setDate] = useState(today);
   const [hour, setHour] = useState(currentHour.toString());
-  const [models, setModels] = useState<Array<{ model: string, quantity: number }>>([{ model: '', quantity: 0 }]);
+  const [models, setModels] = useState<ModelEntry[]>([{ model: '', quantity: 0, part_number: '', uph: null, target: '' }]);
   const [targetUnits, setTargetUnits] = useState('');
   const [operatorId, setOperatorId] = useState('');
   const [operatorName, setOperatorName] = useState('');
@@ -54,7 +55,7 @@ export default function ProductionForm({
   const [remarks, setRemarks] = useState('');
   const [manpower, setManpower] = useState('');
   
-  // NEW: Downtime and Defect States
+  // Downtime and Defect States
   const [planDt, setPlanDt] = useState('');
   const [unplanDt, setUnplanDt] = useState('');
   const [defectQty, setDefectQty] = useState('');
@@ -62,12 +63,21 @@ export default function ProductionForm({
   // UI States
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const { items, error: itemsError, loading: itemsLoading } = useItems();
+  const { items } = useItems();
+  const { getCycleTimeRecordByPartNumber } = useCycleTime();
   const [dropdownVisible, setDropdownVisible] = useState(false);
   const [filteredItems, setFilteredItems] = useState<Item[]>([]);
   const [currentModelIndex, setCurrentModelIndex] = useState<number | null>(null);
-  const flatListRef = useRef<FlatList<Item>>(null);
-  const [scrollY, setScrollY] = useState(0);
+
+  // Auto-calculate total Target Units based on the sum of all model 'target' inputs
+useEffect(() => {
+  const totalTarget = models.reduce(
+    (sum, item) => sum + (parseInt(item.target || '0', 10) || 0),
+    0
+  );
+
+  setTargetUnits(totalTarget.toString());
+}, [models]);
 
   // LOGIC: DATA FETCHING & INITIALIZATION
   useEffect(() => {
@@ -92,7 +102,10 @@ export default function ProductionForm({
         if (initialData.item && Array.isArray(initialData.item)) {
           const mappedItems = initialData.item.map((item: any) => ({
             model: item.model || '',
-            quantity: Number(item.quantity) || 0
+            quantity: Number(item.quantity) || 0,
+            part_number: item.part_number || '',
+            uph: item.uph || null,
+            target: item.target?.toString() || '',
           }));
           setModels(mappedItems);
         }
@@ -106,14 +119,14 @@ export default function ProductionForm({
             .from('profiles')
             .select('operator_id')
             .eq('id', user.id)
-            .single();
+            .maybeSingle<{ operator_id: number | null }>();
 
           if (profile?.operator_id) {
             const { data: operator } = await supabase
               .from('operators')
               .select('name, team')
               .eq('id', profile.operator_id)
-              .single();
+              .maybeSingle<{ name: string; team: string }>();
 
             if (operator) {
               setOperatorId(profile.operator_id.toString());
@@ -128,7 +141,7 @@ export default function ProductionForm({
     };
 
     initializeForm();
-  }, [initialData]); // Triggers when clicking "Edit" or opening a new form
+  }, [initialData]); 
 
   const onTimeChange = (_event: any, selectedTime?: Date) => {
     setShowTimePicker(false);
@@ -139,6 +152,29 @@ export default function ProductionForm({
       setHour(formatted);
     }
   };
+const getModelFinishTime = (target?: string, uph?: number | null) => {
+  const targetQty = Number(target || 0);
+  const uphValue = Number(uph || 0);
+
+  if (targetQty <= 0 || uphValue <= 0) {
+    return '';
+  }
+
+  const totalMinutes = Math.ceil((targetQty / uphValue) * 60);
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  if (mins === 0) {
+    return `${hrs} hr`;
+  }
+
+  return `${hrs} hr ${mins} min`;
+};
 
   const handleSubmit = async () => {
     const hourNum = parseFloat(hour);
@@ -180,8 +216,34 @@ export default function ProductionForm({
       operator_name: operatorName.trim(),
       team: team.trim(),
       remarks: remarks.trim(),
-      // Adjusted to save even if quantity is 0, as long as the model name exists
-      item: models.filter(m => m.model.trim() !== ''),
+item: models
+  .filter(m => m.model.trim() !== '')
+  .map(({ model, quantity, part_number, uph, target }) => {
+    const targetQty = target ? parseInt(target, 10) : 0;
+
+    const targetEstimatedMinutes =
+      uph && targetQty > 0
+        ? Math.ceil((targetQty / uph) * 60)
+        : null;
+
+    const actualEstimatedMinutes =
+      uph && quantity > 0
+        ? Math.ceil((quantity / uph) * 60)
+        : null;
+
+    return {
+      model,
+      quantity,
+      part_number: part_number || null,
+      uph: uph ?? null,
+      target: target ? parseInt(target, 10) : null,
+
+      // Estimated times (minutes)
+      target_estimated_time: targetEstimatedMinutes,
+      actual_estimated_time: actualEstimatedMinutes,
+    };
+  }),
+
       manpower: manpowerNum,
       plan_dt: planDt ? parseFloat(planDt) : null,
       unplan_dt: unplanDt ? parseFloat(unplanDt) : null,
@@ -198,7 +260,7 @@ export default function ProductionForm({
   const handleClear = () => {
     setDate(today);
     setHour(currentHour.toString());
-    setModels([{ model: '', quantity: 0 }]);
+    setModels([{ model: '', quantity: 0, part_number: '', uph: null, target: '' }]);
     setTargetUnits('');
     setRemarks('');
     setManpower('');
@@ -223,6 +285,76 @@ export default function ProductionForm({
     }
   };
 
+  const fetchUphForPartNumber = async (partNumber: string, index: number) => {
+    const trimmedPartNumber = partNumber?.trim();
+    if (!trimmedPartNumber) {
+      return;
+    }
+
+    try {
+      let resolvedTeam: string | undefined = undefined;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('operator_id')
+          .eq('id', user.id)
+          .maybeSingle<{ operator_id: number | null }>();
+
+        if (profile?.operator_id) {
+          const { data: operator } = await supabase
+            .from('operators')
+            .select('team')
+            .eq('id', profile.operator_id)
+            .maybeSingle<{ team: string | null }>();
+
+          if (operator?.team) {
+            resolvedTeam = operator.team;
+          }
+        }
+      }
+
+      const requestedPartNumbers = trimmedPartNumber
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+      let uphValue: number | null = null;
+
+      for (const requestedPartNumber of requestedPartNumbers) {
+        const result = await getCycleTimeRecordByPartNumber(requestedPartNumber, resolvedTeam);
+
+        if (result.success && result.data) {
+          const record = Array.isArray(result.data) ? result.data[0] : result.data;
+          const parsedCycles = parseFloat((record as any)?.cycles_per_hour);
+
+          if (!isNaN(parsedCycles)) {
+            uphValue = parsedCycles;
+            break;
+          }
+        }
+      }
+
+      setModels((currentModels) =>
+        currentModels.map((item, itemIndex) =>
+          itemIndex === index
+            ? { ...item, part_number: trimmedPartNumber.toUpperCase(), uph: uphValue }
+            : item
+        )
+      );
+    } catch (error) {
+      console.error('Failed to fetch UPH:', error);
+      setModels((currentModels) =>
+        currentModels.map((item, itemIndex) =>
+          itemIndex === index
+            ? { ...item, part_number: trimmedPartNumber.toUpperCase(), uph: null }
+            : item
+        )
+      );
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
       <KeyboardAvoidingView 
@@ -232,7 +364,8 @@ export default function ProductionForm({
         <ScrollView 
           style={styles.container} 
           contentContainerStyle={{ paddingBottom: 40 }}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+          nestedScrollEnabled
         >
           <View style={styles.formGroup}>
             <Text style={styles.label}>Date & Hour</Text>
@@ -263,27 +396,37 @@ export default function ProductionForm({
           )}
 
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Models</Text>
+            <Text style={styles.label}>UPH | Model | Target | Actual</Text>
             {models.map((modelItem, index) => (
               <View key={index} style={styles.modelContainer}>
                 <View style={styles.modelRow}>
+                  
+                  {/* UPH Input */}
+                  <TextInput
+                    style={[styles.input, styles.uphInput, { backgroundColor: '#e5e7eb' }]}
+                    value={modelItem.uph != null ? modelItem.uph.toFixed(0) : ''}
+                    editable={false}
+                    placeholder="UPH"
+                  />
+
+                  {/* Model Input */}
                   <TextInput
                     style={[styles.input, styles.modelInput]}
                     value={modelItem.model}
                     onChangeText={(text) => {
                       const newModels = [...models];
-                      newModels[index].model = text;
+                      newModels[index] = { ...newModels[index], model: text };
                       setModels(newModels);
-                            if (text.length > 0) {
-                              const normalizedWords = text.toLowerCase().split(/\s+/).map(w => w.replace(/-/g, "")).filter(w => w.length > 0);
-                              const filtered = items.filter(it => {
-                                const normalizedDesc = it.description.toLowerCase().replace(/[\s-]/g, "");
-                                const normalizedPart = it.part_id.toLowerCase().replace(/[\s-]/g, "");
-                                return normalizedWords.every(word => normalizedDesc.includes(word) || normalizedPart.includes(word));
-                              });
+                      
+                      if (text.length > 0) {
+                        const normalizedWords = text.toLowerCase().split(/\s+/).map(w => w.replace(/-/g, "")).filter(w => w.length > 0);
+                        const filtered = items.filter(it => {
+                          const normalizedDesc = it.description.toLowerCase().replace(/[\s-]/g, "");
+                          const normalizedPart = it.part_id.toLowerCase().replace(/[\s-]/g, "");
+                          return normalizedWords.every(word => normalizedDesc.includes(word) || normalizedPart.includes(word));
+                        });
                         setFilteredItems(filtered);
                         setDropdownVisible(filtered.length > 0);
-                        setScrollY(0); // Reset scroll position for new search
                       } else {
                         setDropdownVisible(false);
                       }
@@ -291,96 +434,119 @@ export default function ProductionForm({
                     }}
                     onFocus={() => {
                       setCurrentModelIndex(index);
-                      setDropdownVisible(false);
+                      setDropdownVisible(filteredItems.length > 0);
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setDropdownVisible(false);
+                        setCurrentModelIndex(null);
+                      }, 120);
                     }}
                     placeholder="Model name"
                   />
 
-                  <TextInput
-                    style={[styles.input, styles.quantityInput]}
-                    value={modelItem.quantity !== null && modelItem.quantity !== undefined ? modelItem.quantity.toString() : ""}
-                    onChangeText={(text) => {
-                      const newModels = [...models];
-                      newModels[index].quantity = parseInt(text) || 0;
-                      setModels(newModels);
-                    }}
-                    placeholder="Qty"
-                    keyboardType="number-pad"
-                  />
+                  {/* Target Input */}
+                <View style={styles.targetContainer}>
+  <TextInput
+    style={[styles.input, styles.targetInput]}
+    value={modelItem.target}
+    onChangeText={(text) => {
+      const newModels = [...models];
+      newModels[index] = {
+        ...newModels[index],
+        target: text,
+      };
+      setModels(newModels);
+    }}
+    placeholder="Target"
+    keyboardType="number-pad"
+  />
 
-                  {models.length > 1 && (
-                    <TouchableOpacity 
-                      style={styles.removeButton} 
-                      onPress={() => setModels(models.filter((_, i) => i !== index))}
-                    >
-                      <Trash2 size={16} color="#ffffff" />
-                    </TouchableOpacity>
+  {modelItem.target && modelItem.uph ? (
+    <Text style={styles.finishTimeText}>
+      {getModelFinishTime(modelItem.target, modelItem.uph)}
+    </Text>
+  ) : null}
+</View>
+                  {/* Actual (Quantity) Input */}
+{/* Actual (Quantity) Input */}
+<View style={styles.quantityContainer}>
+  <TextInput
+    style={[styles.input, styles.quantityInput]}
+    value={
+      modelItem.quantity !== null &&
+      modelItem.quantity !== undefined &&
+      modelItem.quantity !== 0
+        ? modelItem.quantity.toString()
+        : ''
+    }
+    onChangeText={(text) => {
+      const newModels = [...models];
+      newModels[index] = {
+        ...newModels[index],
+        quantity: parseInt(text) || 0,
+      };
+      setModels(newModels);
+    }}
+    placeholder="Actual"
+    keyboardType="number-pad"
+  />
+
+  {modelItem.quantity > 0 && modelItem.uph ? (
+    <Text style={styles.actualTimeText}>
+      {getModelFinishTime(modelItem.quantity.toString(), modelItem.uph)}
+    </Text>
+  ) : null}
+</View>
+
+{models.length > 1 && (
+  <TouchableOpacity
+    style={styles.removeButton}
+    onPress={() => setModels(models.filter((_, i) => i !== index))}
+  >
+    <Trash2 size={16} color="#ffffff" />
+  </TouchableOpacity>
                   )}
                 </View>
 
                 {dropdownVisible && currentModelIndex === index && (
                   <View style={styles.dropdownContainer}>
-                    <View style={styles.dropdownWithButtons}>
-                      <FlatList
-                        ref={flatListRef}
-                        data={filteredItems}
-                        keyExtractor={(_, idx) => idx.toString()}
-                        renderItem={({ item }) => (
-                          <TouchableOpacity
-                            style={styles.dropdownItem}
-                            onPress={() => {
-                              const newModels = [...models];
-                              newModels[index].model = item.model;
-                              setModels(newModels);
-                              setDropdownVisible(false);
-                            }}
-                          >
-                            <Text style={styles.dropdownText}>{item.part_id} : {item.description}</Text>
-                          </TouchableOpacity>
-                        )}
-                        scrollEnabled={Platform.OS === 'web'} // Enable native scroll for web, disable for custom buttons
-                        showsVerticalScrollIndicator={false}
-                        style={{ height: filteredItems.length > 5 ? 200 : 'auto', flex: 1 }}
-                      />
-
-                      {/* ✅ Only show buttons if list length > 5 */}
-                      {filteredItems.length > 5 && (
-                        <View style={styles.scrollButtons}>
-                          <TouchableOpacity
-                            style={styles.scrollButton}
-                            onPress={() => {
-                              const newY = Math.max(0, scrollY - 150);
-                              setScrollY(newY);
-                              flatListRef.current?.scrollToOffset({ offset: newY, animated: true });
-                            }}
-                          >
-                            <ChevronUp size={20} color="#2563eb" />
-                            <Text style={styles.scrollButtonText}>UP</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.scrollButton}
-                            onPress={() => {
-                              // Estimate max scroll (approx 40px per item)
-                              const maxScroll = (filteredItems.length * 40) - 200;
-                              const newY = Math.min(maxScroll, scrollY + 150);
-                              setScrollY(newY);
-                              flatListRef.current?.scrollToOffset({ offset: newY, animated: true });
-                            }}
-                          >
-                            <ChevronDown size={20} color="#2563eb" />
-                            <Text style={styles.scrollButtonText}>DOWN</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
+                    <ScrollView
+                      style={styles.dropdownScroll}
+                      keyboardShouldPersistTaps="always"
+                      nestedScrollEnabled
+                      showsVerticalScrollIndicator
+                      onStartShouldSetResponderCapture={() => true}
+                      onMoveShouldSetResponderCapture={() => true}
+                    >
+                      {filteredItems.map((item, idx) => (
+                        <TouchableOpacity
+                          key={idx.toString()}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            const newModels = [...models];
+                            newModels[index] = {
+                              ...newModels[index],
+                              model: item.model || item.part_id,
+                              part_number: item.part_id,
+                              uph: null,
+                            };
+                            setModels(newModels);
+                            setDropdownVisible(false);
+                            fetchUphForPartNumber(item.part_id, index);
+                          }}
+                        >
+                          <Text style={styles.dropdownText}>{item.part_id} : {item.model || item.description}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
                   </View>
                 )}
               </View>
             ))}
             <TouchableOpacity 
               style={styles.addButton} 
-              onPress={() => setModels([...models, { model: '', quantity: 0 }])}
+              onPress={() => setModels([...models, { model: '', quantity: 0, part_number: '', uph: null, target: '' }])}
             >
               <Text style={styles.addButtonText}>Add Model</Text>
             </TouchableOpacity>
@@ -393,7 +559,19 @@ export default function ProductionForm({
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Target Units</Text>
-              <TextInput style={styles.input} value={targetUnits} onChangeText={setTargetUnits} keyboardType="number-pad" placeholder="Target Units"/>
+<TextInput
+  style={[
+    styles.input,
+    {
+      backgroundColor: '#e5e7eb',
+      color: '#374151',
+      fontWeight: '600',
+    },
+  ]}
+  value={targetUnits === '' ? '0' : targetUnits}
+  editable={false}
+  selectTextOnFocus={false}
+/>
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Units Produced</Text>
@@ -401,7 +579,7 @@ export default function ProductionForm({
             </View>
           </View>
 
-          {/* NEW SECTION: Downtime & Defects */}
+          {/* Downtime & Defects */}
           <View style={styles.row}>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Plan DT</Text>
@@ -466,7 +644,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 8,
-    paddingTop:10,
+    paddingTop: 10,
     backgroundColor: 'transparent',
   },
   formGroup: {
@@ -553,13 +731,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  // Row styles for UPH, Model, Target, and Actual (Qty)
+  uphInput: {
+    flex: .5,
+    marginRight: 6,
+    paddingHorizontal: 4,
+    textAlign: 'center',
+    fontSize: 14,
+  },
   modelInput: {
-    flex: 5,
-    marginRight: 8,
+    flex: 2.5,
+    marginRight: 6,
+    paddingHorizontal: 6,
+  },
+  targetInput: {
+    marginRight: 6,
+    paddingHorizontal: 4,
+    textAlign: 'center',
   },
   quantityInput: {
-    flex: 1.5,
-    marginRight: 8,
+    flex: .7,
+    marginRight: 6,
+    paddingHorizontal: 4,
+    textAlign: 'center',
   },
   addButton: {
     backgroundColor: '#10b981',
@@ -578,7 +772,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     alignItems: 'center',
-    marginLeft: 8,
   },
   rowContainer: {
     flexDirection: 'row',
@@ -613,48 +806,72 @@ const styles = StyleSheet.create({
   dropdownContainer: {
     marginTop: 4,
     zIndex: 1000,
-    backgroundColor: 'transparent',
-  },
-  dropdownWithButtons: {
-    flexDirection: 'row',
-    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
     borderRadius: 8,
-    borderWidth: 0,
-    borderColor: '#e5e7eb',
+    backgroundColor: '#fff',
+    maxHeight: 220,
     overflow: 'hidden',
+    elevation: 3,
+  },
+  dropdownScroll: {
+    maxHeight: 220,
+    backgroundColor: '#fff',
   },
   dropdownItem: {
-    padding: 10,
+    padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(230, 230, 230, 0.5)',
+    borderBottomColor: '#e5e7eb',
     backgroundColor: 'transparent',
   },
   dropdownText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#374151',
   },
-  scrollButtons: {
-    width: 45,
-    backgroundColor: 'transparent',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 5,
-  },
-  scrollButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingVertical: 10,
-  },
-  scrollButtonText: {
-    color: '#000',
-    fontSize: 9,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 14,
-    marginBottom: 8,
-  },
+targetContainer: {
+  flex: 1,
+  marginRight: 6,
+  position: 'relative',
+},
+
+targetInput: {
+  paddingTop: 8,
+  paddingBottom: 18, // Space for the finish time
+  paddingHorizontal: 4,
+  textAlign: 'center',
+},
+
+finishTimeText: {
+  position: 'absolute',
+  bottom: 4,
+  left: 0,
+  right: 0,
+  textAlign: 'center',
+  fontSize: 9,
+  color: '#2563eb',
+  fontWeight: '700',
+},
+quantityContainer: {
+  flex: 1,
+  marginRight: 6,
+  position: 'relative',
+},
+
+quantityInput: {
+  paddingTop: 8,
+  paddingBottom: 18,
+  paddingHorizontal: 4,
+  textAlign: 'center',
+},
+
+actualTimeText: {
+  position: 'absolute',
+  bottom: 4,
+  left: 0,
+  right: 0,
+  textAlign: 'center',
+  fontSize: 9,
+  fontWeight: '700',
+  color: '#10B981',
+},
 });

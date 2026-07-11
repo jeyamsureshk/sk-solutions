@@ -108,6 +108,35 @@ function ProductionDayCard({
       year: 'numeric' 
     }).replace(/ /g, '-');
   };
+const formatEstimatedTime = (value?: string | number | null) => {
+  if (!value) return '';
+
+  const text = String(value).trim();
+
+  // Already formatted (e.g. "1 hr 20 min")
+  if (text.includes('hr') || text.includes('min')) {
+    return text;
+  }
+
+  const minutes = Number(text);
+
+  if (isNaN(minutes) || minutes <= 0) {
+    return '';
+  }
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+
+  if (mins === 0) {
+    return `${hrs} hr`;
+  }
+
+  return `${hrs} hr ${mins} min`;
+};
 
   // --- UPDATED: Render Remarks alongside Metrics (DT & Defects) ---
 const renderRemarksAndMetrics = (record: ProductionRecord) => {
@@ -165,10 +194,10 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
     const checkOwnership = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: profile } = await supabase.from('profiles').select('email').eq('id', user.id).single();
-      if (profile) {
-        const { data: operator } = await supabase.from('operators').select('id').eq('email', profile.email).single();
-        if (operator) {
+      const { data: profile } = await supabase.from('profiles').select('email').eq('id', user.id).maybeSingle<{ email: string | null }>();
+      if (profile?.email) {
+        const { data: operator } = await supabase.from('operators').select('id').eq('email', profile.email).maybeSingle<{ id: number | null }>();
+        if (operator?.id) {
           const permissions: Record<string, boolean> = {};
           records.forEach(r => permissions[r.id] = operator.id === r.operator_id);
           setCanModifyRecords(permissions);
@@ -253,8 +282,8 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
             <View style={styles.tableHeaderRow}>
               <View style={[styles.cell, styles.colHour]}><Text style={styles.thText}>HOURS</Text></View>
               <View style={[styles.cell, styles.colModel]}><Text style={styles.thText}>MODEL</Text></View>
+              <View style={[styles.cell, styles.colQtySmall]}><Text style={styles.thText}>TARGET</Text></View>
               <View style={[styles.cell, styles.colQtySmall]}><Text style={styles.thText}>ACTUAL</Text></View>
-              <View style={[styles.cell, styles.colQtySmall]}><Text style={styles.thText}>PLAN</Text></View>
               <View style={[styles.cell, styles.colMP]}><Text style={styles.thText}>MP</Text></View>
               <View style={[styles.cell, styles.colRemarks, { borderRightWidth: 0 }]}><Text style={styles.thText}>REMARKS</Text></View>
             </View>
@@ -287,24 +316,77 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                   </View>
 
                   {/* 2 & 3. MODEL & ACTUAL (ROW-WISE) */}
-                  <View style={{ flex: 2.2 }}>
-                    {items.map((item, idx) => (
-                      <View key={idx} style={[styles.subRow, idx !== items.length - 1 && styles.subRowDivider]}>
-                        <View style={[styles.cell, styles.subCellModel]}>
-                          <Text style={styles.tdText}>{item.model}</Text>
-                        </View>
-                        <View style={[styles.cell, styles.subCellQty]}>
-                          {/* 🔥 APPLIED DYNAMIC COLOR HERE */}
-                          <Text style={[styles.tdText, { color: actualColor, fontWeight: '700' }]}>{item.quantity}</Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
+<View style={{ flex: 3.23 }}>
+  {items.map((item, idx) => {
+   const meta = item as {
+  model?: string;
+  quantity?: number;
+  target?: number;
+  part_number?: string;
+  uph?: number | null;
+  target_estimated_time?: string;
+  actual_estimated_time?: string;
+};
+    return (
+      <View
+        key={idx}
+        style={[
+          styles.subRow,
+          idx !== items.length - 1 && styles.subRowDivider,
+        ]}
+      >
+        {/* MODEL */}
+        <View style={[styles.cell, styles.subCellModel]}>
+          <Text style={styles.tdText}>{meta.model || '-'}</Text>
 
-                  {/* 4. PLAN */}
-                  <View style={[styles.cell, styles.colQtySmall]}>
-                    <Text style={[styles.tdText, { color: '#777' }]}>{record.target_units}</Text>
-                  </View>
+          {meta.uph != null && (
+            <Text style={styles.uphHintText}>
+              UPH: {meta.uph.toFixed(2)}
+            </Text>
+          )}
+        </View>
+
+        {/* Target */}
+   <View style={[styles.cell, styles.subCellQty]}>
+  <Text
+    style={[
+      styles.tdText,
+      { color: '#6B7280', fontWeight: '700' },
+    ]}
+  >
+    {meta.target ?? 0}
+  </Text>
+
+  {!!meta.target_estimated_time && (
+    <Text style={styles.estimateTargetText}>
+      {formatEstimatedTime(meta.target_estimated_time)}
+    </Text>
+  )}
+</View>
+
+        {/* PLAN */}
+        <View style={[styles.cell, styles.subCellQty]}>
+  <Text
+    style={[
+      styles.tdText,
+      { color: actualColor, fontWeight: '700' },
+    ]}
+  >
+    {meta.quantity ?? '-'}
+  </Text>
+
+  {!!meta.actual_estimated_time && (
+    <Text style={styles.estimateActualText}>
+      {formatEstimatedTime(meta.actual_estimated_time)}
+    </Text>
+  )}
+</View>
+      </View>
+    );
+  })}
+</View>
+
+                
 
                   {/* 5. MAN POWER */}
                   <View style={[styles.cell, styles.colMP]}>
@@ -475,7 +557,7 @@ cardContainer: {
     backgroundColor: '#FAFAFA' 
   },
   colModel: { 
-    flex: 1.55
+    flex: 1.83
   },
   colQtySmall: { 
     width: 38 
@@ -523,6 +605,12 @@ cardContainer: {
     fontSize: 10, 
     fontWeight: '600' 
   },
+  uphHintText: {
+    color: '#2563eb',
+    fontSize: 7.4,
+    fontWeight: '600',
+    marginTop: 2,
+  },
   tdMP: { 
     color: '#475569', 
     fontSize: 11, 
@@ -536,7 +624,7 @@ cardContainer: {
   metricInlineText: {
     fontSize: 6.3,
     fontWeight: '600',
-    color: '#aab',
+    color: '#2563eb',
   },
 
   // --- Modal / Bottom Sheet ---
@@ -595,4 +683,19 @@ cardContainer: {
     color: '#64748B', 
     marginTop: 2 
   },
+estimateTargetText: {
+  fontSize: 7,
+  color: '#2563EB',
+  fontWeight: '700',
+  marginTop: 2,
+  textAlign: 'center',
+},
+
+estimateActualText: {
+  fontSize: 7,
+  color: '#10B981',
+  fontWeight: '700',
+  marginTop: 2,
+  textAlign: 'center',
+},
 });

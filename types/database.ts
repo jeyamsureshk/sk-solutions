@@ -118,6 +118,9 @@ export interface Database {
           efficiency: number;
           item: Json;
           manpower: number;
+          plan_dt: number | null;
+          unplan_dt: number | null;
+          defect_qty: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -134,6 +137,9 @@ export interface Database {
           efficiency?: number;
           item?: Json;
           manpower?: number;
+          plan_dt?: number | null;
+          unplan_dt?: number | null;
+          defect_qty?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -150,6 +156,9 @@ export interface Database {
           efficiency?: number;
           item?: Json;
           manpower?: number;
+          plan_dt?: number | null;
+          unplan_dt?: number | null;
+          defect_qty?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -160,6 +169,7 @@ export interface Database {
           date: string;
           team: TeamType;
           model_name: string;
+          part_number: string;
           stages: Json;
           overall_average: number;
           cycles_per_hour: number;
@@ -171,6 +181,7 @@ export interface Database {
           date: string;
           team: TeamType;
           model_name: string;
+          part_number: string;
           stages: Json;
           overall_average: number;
           cycles_per_hour: number;
@@ -182,6 +193,7 @@ export interface Database {
           date?: string;
           team?: TeamType;
           model_name?: string;
+          part_number?: string;
           stages?: Json;
           overall_average?: number;
           cycles_per_hour?: number;
