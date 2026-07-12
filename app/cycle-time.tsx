@@ -194,8 +194,15 @@ export default function CycleTimeScreen() {
     // Calculate sum of all stage averages
     const sumStageAvg = stageAverages.reduce((sum, avg) => sum + avg, 0);
 
-    // Calculate cycles per hour: 3600 / sum * num_stages
-    const cyclesPerHour = sumStageAvg > 0 ? (3600 / sumStageAvg) * stages.length : 0;
+    const oneManpowerOutput =
+  overallAvg > 0
+    ? parseInt(String((3600 / overallAvg) / stages.length), 10)
+    : 0;
+
+const cyclesPerHour =
+  oneManpowerOutput > 0
+    ? oneManpowerOutput * stages.length
+    : 0;
 
     // Prepare data for database
     const recordData: CycleTimeRecordInsert = {

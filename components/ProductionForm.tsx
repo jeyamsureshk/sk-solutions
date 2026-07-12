@@ -69,6 +69,65 @@ export default function ProductionForm({
   const [filteredItems, setFilteredItems] = useState<Item[]>([]);
   const [currentModelIndex, setCurrentModelIndex] = useState<number | null>(null);
 
+  const [remarksDropdownVisible, setRemarksDropdownVisible] = useState(false);
+const [filteredRemarks, setFilteredRemarks] = useState<string[]>([]);
+
+  const REMARK_SUGGESTIONS = [
+
+  "5S 5 Mins",
+  "Break 15 Mins",
+  "Break 25 Mins",
+  "Break 30 Mins",
+
+  "1 MP Input Received",
+  "1 MP Input Received 10 Mins",
+  "1 MP Input Received 15 Mins",
+  "1 MP Input Received 15 Mins",
+  "2 MP Input Received 10 Mins",
+  "2 MP Input Received 15 Mins",
+
+  "Material Shortage",
+  "Material Delay",
+  "Material Not Received",
+  "Kitting Delayed",
+
+  "Machine Breakdown 10 Mins",
+  "Machine Breakdown 20 Mins",
+  "Machine Breakdown 30 Mins",
+
+  "Power Failure 10 Mins",
+  "Power Failure 20 Mins",
+  "Power Failure 30 Mins",
+
+  "Quality Issue",
+  "Quality Checking",
+  "QC Passed Sticker Missing",
+
+  "Model Changeover 10 Mins",
+  "Model Changeover 20 Mins",
+
+  "Meeting 10 Mins",
+  "Meeting 20 Mins",
+
+  "Training 30 Mins",
+
+  "FG Support",
+  "THT Support",
+  "Accessories Support",
+  "Panel Support",
+  "FG MP Moved To FG",
+
+  "Waiting for Material",
+  "Waiting for QC Approval",
+   
+  "SAP Scanning Problem Delayed 5 Mins",
+  "SAP Scanning Problem Delayed 10 Mins",
+
+  "2 MP Keycover Packing",
+
+  "2 MP Pallet Movement 10 Mins"
+];
+
   // Auto-calculate total Target Units based on the sum of all model 'target' inputs
 useEffect(() => {
   const totalTarget = models.reduce(
@@ -154,7 +213,7 @@ useEffect(() => {
   };
 const getModelFinishTime = (target?: string, uph?: number | null) => {
   const targetQty = Number(target || 0);
-  const uphValue = Number(uph || 0);
+  const uphValue = Math.floor(Number(uph || 0));
 
   if (targetQty <= 0 || uphValue <= 0) {
     return '';
@@ -739,7 +798,69 @@ item: models
 
           <View style={styles.formGroup}>
             <Text style={styles.label}>Remarks</Text>
-            <TextInput style={[styles.input, styles.textArea]} value={remarks} onChangeText={setRemarks} multiline numberOfLines={3} placeholder="Enter Remarks"/>
+<View style={{ position: 'relative' }}>
+  <TextInput
+    style={[styles.input, styles.textArea]}
+    value={remarks}
+    multiline
+    numberOfLines={3}
+    placeholder="Enter Remarks"
+onChangeText={(text) => {
+  setRemarks(text);
+
+  // Current line only
+  const currentLine = text.split('\n').pop()?.trim() || '';
+
+  if (currentLine.length === 0) {
+    setRemarksDropdownVisible(false);
+    return;
+  }
+
+  const filtered = REMARK_SUGGESTIONS.filter(item =>
+    item.toLowerCase().includes(currentLine.toLowerCase())
+  );
+
+  setFilteredRemarks(filtered);
+  setRemarksDropdownVisible(filtered.length > 0);
+}}
+    onBlur={() =>
+      setTimeout(() => setRemarksDropdownVisible(false), 150)
+    }
+    onFocus={() => {
+      if (filteredRemarks.length > 0)
+        setRemarksDropdownVisible(true);
+    }}
+  />
+
+  {remarksDropdownVisible && (
+    <View style={styles.dropdownContainer}>
+      <ScrollView
+        style={styles.dropdownScroll}
+        keyboardShouldPersistTaps="always"
+      >
+        {filteredRemarks.map((item, index) => (
+          <TouchableOpacity
+            key={index}
+            style={styles.dropdownItem}
+         onPress={() => {
+  const lines = remarks.split('\n');
+
+  // Replace only the last line
+  lines[lines.length - 1] = item;
+
+  setRemarks(lines.join('\n'));
+  setRemarksDropdownVisible(false);
+}}
+          >
+            <Text style={styles.dropdownText}>
+              {item}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  )}
+</View>
           </View>
 
           <View style={styles.row}>

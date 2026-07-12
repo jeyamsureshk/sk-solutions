@@ -745,7 +745,7 @@ const scrollDropdown = (direction: 'up' | 'down') => {
                       {item.part_id}
                     </Text>
                     {' : '}
-                    {item.description}
+                    {item.model}
                   </Text>
                 </TouchableOpacity>
               ))}

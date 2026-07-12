@@ -341,7 +341,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
 
           {meta.uph != null && (
             <Text style={styles.uphHintText}>
-              UPH: {meta.uph.toFixed(2)}
+              UPH: {meta.uph.toFixed(0)}
             </Text>
           )}
         </View>
@@ -607,8 +607,8 @@ cardContainer: {
   },
   uphHintText: {
     color: '#2563eb',
-    fontSize: 7.4,
-    fontWeight: '600',
+    fontSize: 6.5,
+    fontWeight: '900',
     marginTop: 2,
   },
   tdMP: { 

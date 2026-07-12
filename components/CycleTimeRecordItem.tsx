@@ -119,21 +119,29 @@ export default function CycleTimeRecordItem({ record, onUpdate, onDelete }: Cycl
         </View>
 
         {/* Output Row moved to the bottom */}
-        <View style={styles.outputRow}>
-          <View style={styles.outputBox}>
-            <Text style={styles.outputText}>
-              Manpower Output:{' '}
-              {record.cycles_per_hour && stages.length > 0
-                ? (record.cycles_per_hour / stages.length).toFixed(2)
-                : 'N/A'}
-            </Text>
-          </View>
-          <View style={styles.outputBox}>
-            <Text style={styles.outputText}>
-              Total Output: {record.cycles_per_hour?.toFixed(2) || 'N/A'}
-            </Text>
-          </View>
-        </View>
+<View style={styles.outputRow}>
+  <View style={styles.outputBox}>
+    <Text style={styles.outputLabel}>
+      Manpower Output:{'   '}
+      <Text style={styles.outputNumber}>
+        {record.cycles_per_hour && stages.length > 0
+          ? Math.floor(record.cycles_per_hour / stages.length)
+          : 'N/A'}
+      </Text>
+    </Text>
+  </View>
+
+  <View style={styles.outputBox}>
+    <Text style={styles.outputLabel}>
+      Total Output:{'   '}
+      <Text style={styles.outputNumber}>
+        {record.cycles_per_hour
+          ? Math.floor(record.cycles_per_hour)
+          : 'N/A'}
+      </Text>
+    </Text>
+  </View>
+</View>
 
       </View>
     </TouchableOpacity>
@@ -179,7 +187,13 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
-  outputText: { fontSize: 14, fontWeight: '600', color: '#059669' },
+
+outputNumber: {
+  fontSize: 15,
+  fontWeight: '900',
+  color: '#0596c9', // Vivid Blue
+},
+  outputLabel: { fontSize: 14, fontWeight: '600', color: '#059669' },
   stagesContainer: { marginTop: 4 },
   stagesTitle: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 4 },
   stageRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },

@@ -90,7 +90,13 @@ export const useCycleTime = () => {
         return { success: false, error: error.message };
       }
 
-      return { success: true, data: result || [] };
+      // TRUNCATE DECIMALS (e.g. 89.34 -> 89)
+      const formattedResult = (result || []).map(record => ({
+        ...record,
+        ...(record.cycles_per_hour != null && { cycles_per_hour: Math.trunc(Number(record.cycles_per_hour)) })
+      }));
+
+      return { success: true, data: formattedResult };
     } catch (err) {
       console.error('Error fetching cycle time records:', err);
       const errorMessage = 'Failed to fetch cycle time records';
@@ -146,7 +152,17 @@ export const useCycleTime = () => {
         return normalizedPartNumbers.some((partNumberValue) => storedPartNumbers.includes(partNumberValue));
       });
 
-      return { success: true, data: filteredRecords[0] ?? null };
+      let matchingRecord = filteredRecords[0] ?? null;
+
+      // TRUNCATE DECIMALS (e.g. 89.34 -> 89)
+      if (matchingRecord && matchingRecord.cycles_per_hour != null) {
+        matchingRecord = {
+          ...matchingRecord,
+          cycles_per_hour: Math.trunc(Number(matchingRecord.cycles_per_hour))
+        };
+      }
+
+      return { success: true, data: matchingRecord };
     } catch (err) {
       console.error('Error fetching cycle time record by part number:', err);
       const errorMessage = 'Failed to fetch cycle time record';
