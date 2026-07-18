@@ -145,51 +145,109 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
     const lines = text.split('\n');
 
     return (
-      <View style={{ width: '100%', flex: 1 }}>
-        
-        {/* Render DT & Defect Text Inline at the top */}
-        {hasMetrics ? (
-          <View style={{ 
-            width: '100%', 
-            flexDirection: 'row', 
-            justifyContent: 'space-between',
-            marginBottom: text.trim() ? 1 : 0,
-          }}>
-            <View style={{ flex: 1, alignItems: 'flex-start' }}>
-              {Number(record.plan_dt) > 0 && (
-                <Text style={styles.metricInlineText}>Plan DT : {record.plan_dt}m</Text>
-              )}
-            </View>
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              {Number(record.unplan_dt) > 0 && (
-                 <Text style={styles.metricInlineText}>Unplan DT : {record.unplan_dt}m</Text>
-              )}
-            </View>
-            <View style={{ flex: 1, alignItems: 'flex-end' }}>
-              {Number(record.defect_qty) > 0 && (
-                 <Text style={styles.metricInlineText}>Defect : {record.defect_qty} nos</Text>
-              )}
-            </View>
-          </View>
-        ) : null}
+  <View style={{ width: '100%', flex: 1 }}>
 
-        {/* Render Remarks (Centered vertically in the remaining cell space) */}
-        <View style={{ flex: 1, justifyContent: 'center', paddingTop: hasMetrics ? 2 : 4 }}>
-          {lines.map((line, index) => {
-             if (!line.trim()) return null;
-             const lower = line.toLowerCase();
-             const isError = ["problem", "issue", "fault", "delay", "missing", "damage","touch up","miss match", "shortage"].some(w => lower.includes(w));
-             const formattedLine = toProperCase(line);
-             return (
-               <Text key={index} style={[styles.tdHandwriting, { color: isError ? THEME.error : THEME.markerBlack, marginBottom: 2 }]}>
-                 {formattedLine}
-               </Text>
-             );
-          })}
-        </View>
+    {/* Metrics Badges */}
+    {hasMetrics && (
+      <View style={styles.metricsWrapper}>
+
+        {Number(record.plan_dt) > 0 && (
+          <View
+            style={[
+              styles.metricBadge,
+              { backgroundColor: '#DBEAFE' },
+            ]}>
+            <Text
+              style={[
+                styles.metricBadgeText,
+                { color: '#1D4ED8' },
+              ]}>
+              PDT : {record.plan_dt}m
+            </Text>
+          </View>
+        )}
+
+        {Number(record.unplan_dt) > 0 && (
+          <View
+            style={[
+              styles.metricBadge,
+              { backgroundColor: '#FEF3C7' },
+            ]}>
+            <Text
+              style={[
+                styles.metricBadgeText,
+                { color: '#B45309' },
+              ]}>
+              UDT : {record.unplan_dt}m
+            </Text>
+          </View>
+        )}
+
+        {Number(record.defect_qty) > 0 && (
+          <View
+            style={[
+              styles.metricBadge,
+              { backgroundColor: '#FEE2E2' },
+            ]}>
+            <Text
+              style={[
+                styles.metricBadgeText,
+                { color: '#B91C1C' },
+              ]}>
+              DEF : {record.defect_qty}
+            </Text>
+          </View>
+        )}
+
       </View>
-    );
-  };
+    )}
+
+    {/* Remarks */}
+    <View
+      style={{
+        flex: 1,
+        justifyContent: 'center',
+      }}
+    >
+      {lines.map((line, index) => {
+        if (!line.trim()) return null;
+
+        const lower = line.toLowerCase();
+
+        const isError = [
+          'problem',
+          'issue',
+          'fault',
+          'delay',
+          'missing',
+          'damage',
+          'touch up',
+          'miss match',
+          'shortage',
+        ].some((w) => lower.includes(w));
+
+        const formattedLine = toProperCase(line);
+
+        return (
+          <Text
+            key={index}
+            style={[
+              styles.tdHandwriting,
+              {
+                color: isError
+                  ? THEME.error
+                  : THEME.markerBlack,
+                marginBottom: 2,
+              },
+            ]}>
+            {formattedLine}
+          </Text>
+        );
+      })}
+    </View>
+
+  </View>
+);  };
   useEffect(() => {
     const checkOwnership = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -385,8 +443,6 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
     );
   })}
 </View>
-
-                
 
                   {/* 5. MAN POWER */}
                   <View style={[styles.cell, styles.colMP]}>
@@ -606,11 +662,18 @@ cardContainer: {
     fontWeight: '600' 
   },
   uphHintText: {
-    color: '#2563eb',
-    fontSize: 6.5,
-    fontWeight: '900',
-    marginTop: 2,
-  },
+  alignSelf: 'flex-start',
+  marginTop: 3,
+  paddingHorizontal: 6,
+  paddingVertical: 2,
+  borderRadius: 4,
+  backgroundColor: '#EFFAFE',
+  color: '#0369A1',
+  fontSize: 7.5,
+  fontWeight: '700',
+  overflow: 'hidden',
+},
+
   tdMP: { 
     color: '#475569', 
     fontSize: 11, 
@@ -684,18 +747,47 @@ cardContainer: {
     marginTop: 2 
   },
 estimateTargetText: {
+  alignSelf: 'center',
+  marginTop: 3,
+  paddingHorizontal: 5,
+  paddingVertical: 2,
+  borderRadius: 4,
+  backgroundColor: '#E0FDF4',
+  color: '#047857',
   fontSize: 7,
-  color: '#2563EB',
   fontWeight: '700',
-  marginTop: 2,
+  overflow: 'hidden',
   textAlign: 'center',
 },
 
 estimateActualText: {
+  alignSelf: 'center',
+  marginTop: 3,
+  paddingHorizontal: 5,
+  paddingVertical: 2,
+  borderRadius: 4,
+  backgroundColor: '#FEF3C7',
+  color: '#B45309',
   fontSize: 7,
-  color: '#10B981',
   fontWeight: '700',
-  marginTop: 2,
+  overflow: 'hidden',
   textAlign: 'center',
+},
+metricsWrapper: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  gap: 4,
+  marginBottom: 6,
+},
+
+metricBadge: {
+  paddingHorizontal: 6,
+  paddingVertical: 3,
+  borderRadius: 4,
+},
+
+metricBadgeText: {
+  fontSize: 6.5,
+  fontWeight: '700',
 },
 });

@@ -70,18 +70,16 @@ export default function ProductionForm({
   const [currentModelIndex, setCurrentModelIndex] = useState<number | null>(null);
 
   const [remarksDropdownVisible, setRemarksDropdownVisible] = useState(false);
-const [filteredRemarks, setFilteredRemarks] = useState<string[]>([]);
+  const [filteredRemarks, setFilteredRemarks] = useState<string[]>([]);
 
   const REMARK_SUGGESTIONS = [
 
   "5S 5 Mins",
-  "Break 15 Mins",
-  "Break 25 Mins",
-  "Break 30 Mins",
+  "Tea Break 15 Mins",
+  "Lunch Break 25 Mins",
 
   "1 MP Input Received",
   "1 MP Input Received 10 Mins",
-  "1 MP Input Received 15 Mins",
   "1 MP Input Received 15 Mins",
   "2 MP Input Received 10 Mins",
   "2 MP Input Received 15 Mins",
@@ -102,6 +100,8 @@ const [filteredRemarks, setFilteredRemarks] = useState<string[]>([]);
   "Quality Issue",
   "Quality Checking",
   "QC Passed Sticker Missing",
+  "EOL Missing From FQC",
+  "Address Missing From FQC",
 
   "Model Changeover 10 Mins",
   "Model Changeover 20 Mins",
@@ -125,19 +125,82 @@ const [filteredRemarks, setFilteredRemarks] = useState<string[]>([]);
 
   "2 MP Keycover Packing",
 
-  "2 MP Pallet Movement 10 Mins"
-];
+  "2 MP Pallet Movement 10 Mins",
+  "1 MP Pallet Movement 20 Mins",
+  "1 MP Pallet Movement 30 Mins",
+  ];
 
   // Auto-calculate total Target Units based on the sum of all model 'target' inputs
-useEffect(() => {
+ useEffect(() => {
   const totalTarget = models.reduce(
     (sum, item) => sum + (parseInt(item.target || '0', 10) || 0),
     0
   );
 
   setTargetUnits(totalTarget.toString());
-}, [models]);
+  }, [models]);
 
+
+  useEffect(() => {
+  calculateRemarkValues();
+  }, [remarks]);
+
+  const calculateRemarkValues = () => {
+  const lines = remarks
+    .split('\n')
+    .map(x => x.trim())
+    .filter(Boolean);
+
+  let planned = 0;
+  let unplanned = 0;
+  let defects = 0;
+
+  lines.forEach(line => {
+    const lower = line.toLowerCase();
+
+    // extract first number
+    const mins =
+      Number(line.match(/\d+/)?.[0]) || 0;
+
+    // Planned DT
+    if (
+      lower.includes("tea break") ||
+      lower.includes("lunch break") ||
+      lower.includes("change over") ||
+      lower.includes("changeover") ||
+      lower.includes("meeting") ||
+      lower.includes("training")
+    ) {
+      planned += mins;
+    }
+
+    // Unplanned DT
+    else if (
+      lower.includes("fault") ||
+      lower.includes("machine breakdown") ||
+      lower.includes("input delay") ||
+      lower.includes("kitting delay") ||
+      lower.includes("material") ||
+      lower.includes("power failure") ||
+      lower.includes("waiting")
+    ) {
+      unplanned += mins;
+    }
+
+    // Defect Qty
+    if (
+      lower.includes("nos") ||
+      lower.includes("pcs")
+    ) {
+      const qty = Number(line.match(/\d+/)?.[0]) || 0;
+      defects += qty;
+    }
+  });
+
+  setPlanDt(planned ? planned.toString() : "");
+  setUnplanDt(unplanned ? unplanned.toString() : "");
+  setDefectQty(defects ? defects.toString() : "");
+  };
   // LOGIC: DATA FETCHING & INITIALIZATION
   useEffect(() => {
     const initializeForm = async () => {
