@@ -108,13 +108,14 @@ function ProductionDayCard({
       year: 'numeric' 
     }).replace(/ /g, '-');
   };
+
 const formatEstimatedTime = (value?: string | number | null) => {
   if (!value) return '';
 
   const text = String(value).trim();
 
   // Already formatted (e.g. "1 hr 20 min")
-  if (text.includes('hr') || text.includes('min')) {
+  if (text.includes('H') || text.includes('M')) {
     return text;
   }
 
@@ -125,17 +126,17 @@ const formatEstimatedTime = (value?: string | number | null) => {
   }
 
   if (minutes < 60) {
-    return `${minutes} min`;
+    return `${minutes} m`;
   }
 
   const hrs = Math.floor(minutes / 60);
   const mins = minutes % 60;
 
   if (mins === 0) {
-    return `${hrs} hr`;
+    return `${hrs} h`;
   }
 
-  return `${hrs} hr ${mins} min`;
+  return `${hrs} h ${mins} m`;
 };
 
   // --- UPDATED: Render Remarks alongside Metrics (DT & Defects) ---
@@ -155,14 +156,14 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
           <View
             style={[
               styles.metricBadge,
-              { backgroundColor: '#DBEAFE' },
+              { backgroundColor: '#fff' },
             ]}>
             <Text
               style={[
                 styles.metricBadgeText,
                 { color: '#1D4ED8' },
               ]}>
-              PDT : {record.plan_dt}m
+              PDT : {record.plan_dt} m
             </Text>
           </View>
         )}
@@ -171,14 +172,14 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
           <View
             style={[
               styles.metricBadge,
-              { backgroundColor: '#FEF3C7' },
+              { backgroundColor: '#fff' },
             ]}>
             <Text
               style={[
                 styles.metricBadgeText,
                 { color: '#B45309' },
               ]}>
-              UDT : {record.unplan_dt}m
+              UDT : {record.unplan_dt} m
             </Text>
           </View>
         )}
@@ -187,7 +188,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
           <View
             style={[
               styles.metricBadge,
-              { backgroundColor: '#FEE2E2' },
+              { backgroundColor: '#fff' },
             ]}>
             <Text
               style={[
@@ -248,6 +249,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
 
   </View>
 );  };
+
   useEffect(() => {
     const checkOwnership = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -384,6 +386,8 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
   uph?: number | null;
   target_estimated_time?: string;
   actual_estimated_time?: string;
+  start_time?: string;
+  end_time?: string;
 };
     return (
       <View
@@ -397,18 +401,25 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
         <View style={[styles.cell, styles.subCellModel]}>
           <Text style={styles.tdText}>{meta.model || '-'}</Text>
 
-          {meta.uph != null && (
-            <Text style={styles.uphHintText}>
-              UPH: {meta.uph.toFixed(0)}
-            </Text>
-          )}
+          <View style={styles.metaRow}>
+            {meta.uph != null && (
+              <Text style={styles.uphHintText}>
+                UPH: {meta.uph.toFixed(0)}
+              </Text>
+            )}
+            {(meta.start_time || meta.end_time) && (
+              <Text style={styles.timeHintText}>
+                {meta.start_time || '?'} - {meta.end_time || '?'}
+              </Text>
+            )}
+          </View>
         </View>
 
         {/* Target */}
    <View style={[styles.cell, styles.subCellQty]}>
   <Text
     style={[
-      styles.tdText,
+      styles.tdTextNumber,
       { color: '#6B7280', fontWeight: '700' },
     ]}
   >
@@ -426,7 +437,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
         <View style={[styles.cell, styles.subCellQty]}>
   <Text
     style={[
-      styles.tdText,
+      styles.tdTextNumber,
       { color: actualColor, fontWeight: '700' },
     ]}
   >
@@ -603,7 +614,7 @@ cardContainer: {
   thText: { 
     color: '#64748B', 
     fontWeight: '700', 
-    fontSize: 8.6, 
+    fontSize: 8, 
     letterSpacing: 0.5 
   },
 
@@ -613,10 +624,10 @@ cardContainer: {
     backgroundColor: '#FAFAFA' 
   },
   colModel: { 
-    flex: 1.83
+    flex: 2.1,
   },
   colQtySmall: { 
-    width: 38 
+    width: 38, 
   },
   colMP: { 
     width: 32 
@@ -661,19 +672,36 @@ cardContainer: {
     fontSize: 10, 
     fontWeight: '600' 
   },
+  tdTextNumber: { 
+    color: THEME.primary, 
+    fontSize: 10, 
+    fontWeight: '800', 
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+    flexWrap: 'wrap',
+  },
   uphHintText: {
-  alignSelf: 'flex-start',
-  marginTop: 3,
-  paddingHorizontal: 6,
-  paddingVertical: 2,
-  borderRadius: 4,
-  backgroundColor: '#EFFAFE',
-  color: '#0369A1',
-  fontSize: 7.5,
-  fontWeight: '700',
-  overflow: 'hidden',
-},
-
+    marginRight: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+    color: '#0369A1',
+    fontSize: 7.5,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
+  timeHintText: {
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+    color: '#64748B',
+    fontSize: 7.5,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
   tdMP: { 
     color: '#475569', 
     fontSize: 11, 
@@ -752,7 +780,7 @@ estimateTargetText: {
   paddingHorizontal: 5,
   paddingVertical: 2,
   borderRadius: 4,
-  backgroundColor: '#E0FDF4',
+  backgroundColor: '#fff',
   color: '#047857',
   fontSize: 7,
   fontWeight: '700',
@@ -766,7 +794,7 @@ estimateActualText: {
   paddingHorizontal: 5,
   paddingVertical: 2,
   borderRadius: 4,
-  backgroundColor: '#FEF3C7',
+  backgroundColor: '#fff',
   color: '#B45309',
   fontSize: 7,
   fontWeight: '700',

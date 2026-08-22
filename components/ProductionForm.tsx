@@ -32,7 +32,86 @@ interface ModelEntry {
   part_number?: string;
   uph?: number | null;
   target?: string;
+  start_time?: string; // Added
+  end_time?: string;   // Added
 }
+
+// HELPER: Calculates default start/end times based on the hour selected
+const getDefaultTimes = (hourStr: string) => {
+  const hourNum = parseFloat(hourStr);
+  if (isNaN(hourNum)) return { start: '', end: '' };
+  
+  // Special case matching your production cards
+  if (hourNum === 9 || hourNum === 9.0) return { start: '08:30', end: '09:00' };
+  
+  const formatTimeFromHour = (hNum: number) => {
+    let totalMins = Math.round(hNum * 60);
+    if (totalMins < 0) totalMins += 24 * 60; // Handle midnight wrap-around
+    const finalH = Math.floor(totalMins / 60) % 24;
+    const finalM = totalMins % 60;
+    return `${finalH.toString().padStart(2, '0')}:${finalM.toString().padStart(2, '0')}`;
+  };
+
+  return {
+    start: formatTimeFromHour(hourNum - 1),
+    end: formatTimeFromHour(hourNum)
+  };
+};
+
+// Converts HH:mm + minutes into HH:mm, including midnight wrap-around.
+const addMinutesToTime = (time: string, minutes: number) => {
+  if (!time || !Number.isFinite(minutes)) return time;
+
+  const [hours, mins] = time.split(':').map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(mins)) return time;
+
+  const totalMinutes = (hours * 60 + mins + Math.max(0, Math.ceil(minutes))) % (24 * 60);
+  const finalHours = Math.floor(totalMinutes / 60);
+  const finalMinutes = totalMinutes % 60;
+
+  return `${finalHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
+};
+
+// Automatic model timing:
+// 1. Start from the model's start time.
+// 2. Use actual quantity time when actual quantity is entered.
+// 3. Otherwise use target/estimated time.
+// 4. The next model starts exactly when the previous model ends.
+const recalculateModelTimes = (modelList: ModelEntry[]) => {
+  const updated = [...modelList];
+
+  for (let index = 0; index < updated.length; index++) {
+    const current = updated[index];
+
+    const startTime =
+      index === 0
+        ? current.start_time || ''
+        : updated[index - 1].end_time || current.start_time || '';
+
+    const targetQty = Number(current.target || 0);
+    const actualQty = Number(current.quantity || 0);
+    const uph = Number(current.uph || 0);
+
+    // Actual quantity takes priority over target time once entered.
+    const durationMinutes =
+      uph > 0 && actualQty > 0
+        ? Math.ceil((actualQty / uph) * 60)
+        : uph > 0 && targetQty > 0
+          ? Math.ceil((targetQty / uph) * 60)
+          : 0;
+
+    updated[index] = {
+      ...current,
+      start_time: startTime,
+      end_time:
+        startTime && durationMinutes > 0
+          ? addMinutesToTime(startTime, durationMinutes)
+          : startTime,
+    };
+  }
+
+  return updated;
+};
 
 export default function ProductionForm({
   onSubmit,
@@ -43,11 +122,20 @@ export default function ProductionForm({
 }: ProductionFormProps) {
   const today = new Date().toISOString().split('T')[0];
   const currentHour = new Date().getHours();
+  const defaultInitialTimes = getDefaultTimes(currentHour.toString());
 
   // Form States
   const [date, setDate] = useState(today);
   const [hour, setHour] = useState(currentHour.toString());
-  const [models, setModels] = useState<ModelEntry[]>([{ model: '', quantity: 0, part_number: '', uph: null, target: '' }]);
+  const [models, setModels] = useState<ModelEntry[]>([{ 
+    model: '', 
+    quantity: 0, 
+    part_number: '', 
+    uph: null, 
+    target: '', 
+    start_time: defaultInitialTimes.start, 
+    end_time: defaultInitialTimes.end 
+  }]);
   const [targetUnits, setTargetUnits] = useState('');
   const [operatorId, setOperatorId] = useState('');
   const [operatorName, setOperatorName] = useState('');
@@ -63,6 +151,10 @@ export default function ProductionForm({
   // UI States
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  
+  // Model Time Picker State (Added)
+  const [modelTimePickerState, setModelTimePickerState] = useState<{ index: number; field: 'start_time' | 'end_time' } | null>(null);
+
   const { items } = useItems();
   const { getCycleTimeRecordByPartNumber } = useCycleTime();
   const [dropdownVisible, setDropdownVisible] = useState(false);
@@ -73,58 +165,44 @@ export default function ProductionForm({
   const [filteredRemarks, setFilteredRemarks] = useState<string[]>([]);
 
   const REMARK_SUGGESTIONS = [
-
   "5S 5 Mins",
   "Tea Break 15 Mins",
   "Lunch Break 25 Mins",
-
   "1 MP Input Received",
   "1 MP Input Received 10 Mins",
   "1 MP Input Received 15 Mins",
   "2 MP Input Received 10 Mins",
   "2 MP Input Received 15 Mins",
-
   "Material Shortage",
   "Material Delay",
   "Material Not Received",
   "Kitting Delayed",
-
   "Machine Breakdown 10 Mins",
   "Machine Breakdown 20 Mins",
   "Machine Breakdown 30 Mins",
-
   "Power Failure 10 Mins",
   "Power Failure 20 Mins",
   "Power Failure 30 Mins",
-
   "Quality Issue",
   "Quality Checking",
   "QC Passed Sticker Missing",
   "EOL Missing From FQC",
   "Address Missing From FQC",
-
   "Model Changeover 10 Mins",
   "Model Changeover 20 Mins",
-
   "Meeting 10 Mins",
   "Meeting 20 Mins",
-
   "Training 30 Mins",
-
   "FG Support",
   "THT Support",
   "Accessories Support",
   "Panel Support",
   "FG MP Moved To FG",
-
   "Waiting for Material",
   "Waiting for QC Approval",
-   
   "SAP Scanning Problem Delayed 5 Mins",
   "SAP Scanning Problem Delayed 10 Mins",
-
   "2 MP Keycover Packing",
-
   "2 MP Pallet Movement 10 Mins",
   "1 MP Pallet Movement 20 Mins",
   "1 MP Pallet Movement 30 Mins",
@@ -228,6 +306,8 @@ export default function ProductionForm({
             part_number: item.part_number || '',
             uph: item.uph || null,
             target: item.target?.toString() || '',
+            start_time: item.start_time || '', // Load start time
+            end_time: item.end_time || '',     // Load end time
           }));
           setModels(mappedItems);
         }
@@ -272,8 +352,34 @@ export default function ProductionForm({
       const m = selectedTime.getMinutes();
       const formatted = m >= 30 ? `${h}.5` : `${h}`;
       setHour(formatted);
+
+      // Auto-update times for the first entry if it's a new clean record
+      if (!initialData && models.length === 1 && !models[0].model) {
+        const defaultTimes = getDefaultTimes(formatted);
+        setModels([{ ...models[0], start_time: defaultTimes.start, end_time: defaultTimes.end }]);
+      }
     }
   };
+
+  // Added: Model Time Picker Handler
+  const onModelTimeChange = (_event: any, selectedTime?: Date) => {
+    const currentState = modelTimePickerState;
+    setModelTimePickerState(null); // Close the picker
+    
+    if (selectedTime && currentState) {
+      const h = selectedTime.getHours().toString().padStart(2, '0');
+      const m = selectedTime.getMinutes().toString().padStart(2, '0');
+      const formattedTime = `${h}:${m}`;
+
+      const newModels = [...models];
+      newModels[currentState.index] = {
+        ...newModels[currentState.index],
+        [currentState.field]: formattedTime,
+      };
+      setModels(recalculateModelTimes(newModels));
+    }
+  };
+
 const getModelFinishTime = (target?: string, uph?: number | null) => {
   const targetQty = Number(target || 0);
   const uphValue = Math.floor(Number(uph || 0));
@@ -297,6 +403,7 @@ const getModelFinishTime = (target?: string, uph?: number | null) => {
 
   return `${hrs} hr ${mins} min`;
 };
+
 const getSuggestedTarget = (
   currentIndex: number,
   currentUph?: number | null
@@ -414,7 +521,7 @@ const getTotalActualEstimatedTime = () => {
       remarks: remarks.trim(),
 item: models
   .filter(m => m.model.trim() !== '')
-  .map(({ model, quantity, part_number, uph, target }) => {
+  .map(({ model, quantity, part_number, uph, target, start_time, end_time }) => {
     const targetQty = target ? parseInt(target, 10) : 0;
 
     const targetEstimatedMinutes =
@@ -433,6 +540,8 @@ item: models
       part_number: part_number || null,
       uph: uph ?? null,
       target: target ? parseInt(target, 10) : null,
+      start_time: start_time || null, // Saved
+      end_time: end_time || null,     // Saved
 
       // Estimated times (minutes)
       target_estimated_time: targetEstimatedMinutes,
@@ -456,7 +565,8 @@ item: models
   const handleClear = () => {
     setDate(today);
     setHour(currentHour.toString());
-    setModels([{ model: '', quantity: 0, part_number: '', uph: null, target: '' }]);
+    const defTimes = getDefaultTimes(currentHour.toString());
+    setModels([{ model: '', quantity: 0, part_number: '', uph: null, target: '', start_time: defTimes.start, end_time: defTimes.end }]);
     setTargetUnits('');
     setRemarks('');
     setManpower('');
@@ -517,6 +627,7 @@ item: models
         .filter(Boolean);
 
       let uphValue: number | null = null;
+      let fetchedManpower: number | null = null;
 
       for (const requestedPartNumber of requestedPartNumbers) {
         const result = await getCycleTimeRecordByPartNumber(requestedPartNumber, resolvedTeam);
@@ -525,11 +636,21 @@ item: models
           const record = Array.isArray(result.data) ? result.data[0] : result.data;
           const parsedCycles = parseFloat((record as any)?.cycles_per_hour);
 
+          // Calculate stage length for manpower
+          if (record.stages && Array.isArray(record.stages)) {
+            fetchedManpower = record.stages.length;
+          }
+
           if (!isNaN(parsedCycles)) {
             uphValue = parsedCycles;
             break;
           }
         }
+      }
+
+      // Automatically update the global manpower input if we successfully grabbed stages
+      if (fetchedManpower !== null && fetchedManpower > 0) {
+        setManpower(fetchedManpower.toString());
       }
 
      setModels((currentModels) => {
@@ -547,7 +668,7 @@ item: models
     target: suggestedTarget,
   };
 
-  return updated;
+  return recalculateModelTimes(updated);
 });
     } catch (error) {
       console.error('Failed to fetch UPH:', error);
@@ -598,6 +719,16 @@ item: models
               mode="time"
               display="default"
               onChange={onTimeChange}
+            />
+          )}
+
+          {/* New Picker for Model Start/End Times */}
+          {modelTimePickerState && (
+            <DateTimePicker
+              value={new Date()}
+              mode="time"
+              display="default"
+              onChange={onModelTimeChange}
             />
           )}
 
@@ -662,7 +793,7 @@ item: models
         ...newModels[index],
         target: text,
       };
-      setModels(newModels);
+      setModels(recalculateModelTimes(newModels));
     }}
     placeholder="Target"
     keyboardType="number-pad"
@@ -692,7 +823,7 @@ item: models
         ...newModels[index],
         quantity: parseInt(text) || 0,
       };
-      setModels(newModels);
+      setModels(recalculateModelTimes(newModels));
     }}
     placeholder="Actual"
     keyboardType="number-pad"
@@ -713,6 +844,23 @@ item: models
     <Trash2 size={16} color="#ffffff" />
   </TouchableOpacity>
                   )}
+                </View>
+                
+                {/* Time Picker Row for Individual Model */}
+                <View style={styles.modelTimeRow}>
+                  <TouchableOpacity 
+                    style={styles.modelTimeButton} 
+                    onPress={() => setModelTimePickerState({ index, field: 'start_time' })}
+                  >
+                    <Text style={styles.modelTimeButtonText}>{modelItem.start_time || 'Start Time'}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.timeSeparator}>-</Text>
+                  <TouchableOpacity 
+                    style={styles.modelTimeButton} 
+                    onPress={() => setModelTimePickerState({ index, field: 'end_time' })}
+                  >
+                    <Text style={styles.modelTimeButtonText}>{modelItem.end_time || 'End Time'}</Text>
+                  </TouchableOpacity>
                 </View>
 
                 {dropdownVisible && currentModelIndex === index && (
@@ -752,95 +900,106 @@ item: models
             ))}
             <TouchableOpacity 
               style={styles.addButton} 
-              onPress={() => setModels([...models, { model: '', quantity: 0, part_number: '', uph: null, target: '' }])}
+              onPress={() => {
+                const lastModel = models[models.length - 1];
+                const prevEndTime = lastModel ? lastModel.end_time : '';
+                const defTimes = getDefaultTimes(hour);
+                setModels([
+                  ...models, 
+                  { 
+                    model: '', 
+                    quantity: 0, 
+                    part_number: '', 
+                    uph: null, 
+                    target: '', 
+                    start_time: prevEndTime || defTimes.start,
+                    end_time: prevEndTime || defTimes.start
+                  }
+                ]);
+              }}
             >
               <Text style={styles.addButtonText}>Add Model</Text>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.row}>
+<View style={styles.row}>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Manpower</Text>
               <TextInput style={styles.input} value={manpower} onChangeText={setManpower} keyboardType="number-pad" placeholder="Manpower"/>
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Target Units</Text>
-<View
-  style={[
-    styles.input,
-    {
-      backgroundColor: '#fff',
-      height: 43,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingVertical: 4,
-    },
-  ]}
->
-  <Text
-    style={{
-      fontSize: 18,
-      fontWeight: '700',
-      color: '#1f1f1f', // Blue
-      lineHeight: 16,
-    }}
-  >
-    {targetUnits || 0}
-  </Text>
+              <View
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: '#fff',
+                    height: 43,
+                    flexDirection: 'row', // Places items side-by-side
+                    justifyContent: 'center',
+                    alignItems: 'center', // Centers them vertically
+                    paddingVertical: 4,
+                    gap: 6, // Adds space between the number and time
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: '700',
+                    color: '#1f1f1f',
+                  }}
+                >
+                  {targetUnits || 0}
+                </Text>
 
-  <Text
-    style={{
-      fontSize: 9,
-      fontWeight: '700',
-      color: '#2563eb', // Green
-      lineHeight: 10,
-      marginTop:3,
-    }}
-  >
-    {getTotalEstimatedTargetTime() || '0 min'}
-  </Text>
-</View>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: '700',
+                    color: '#2563eb', // Blue
+                  }}
+                >
+                  {getTotalEstimatedTargetTime() || '0 min'}
+                </Text>
+              </View>
             </View>
-<View style={styles.formGroupRow}>
-  <Text style={styles.label}>Units Produced</Text>
+            <View style={styles.formGroupRow}>
+              <Text style={styles.label}>Units Produced</Text>
+              <View
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: '#fff',
+                    height: 43,
+                    flexDirection: 'row', // Places items side-by-side
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    paddingVertical: 4,
+                    gap: 6, // Adds space between the number and time
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: '700',
+                    color: '#1f1f1f',
+                  }}
+                >
+                  {models.reduce((sum, item) => sum + (item.quantity || 0), 0)}
+                </Text>
 
- <View
-  style={[
-    styles.input,
-    {
-      backgroundColor: '#fff',
-      height: 43,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingVertical: 4,
-    },
-  ]}
->
-  <Text
-    style={{
-      fontSize: 18,
-      fontWeight: '700',
-      color: '#374151',
-      lineHeight: 15,
-      color: '#1f1f1f',
-    }}
-  >
-    {models.reduce((sum, item) => sum + (item.quantity || 0), 0)}
-  </Text>
-
-  <Text
-    style={{
-      fontSize: 9,
-      fontWeight: '700',
-      color: '#10B981', // Green
-      lineHeight: 10,
-       marginTop:3,
-    }}
-  >
-    {getTotalActualEstimatedTime()}
-  </Text>
-</View>
-</View>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: '700',
+                    color: '#10B981', // Green
+                  }}
+                >
+                  {getTotalActualEstimatedTime()}
+                </Text>
+              </View>
+            </View>
           </View>
 
           {/* Downtime & Defects */}
@@ -1055,7 +1214,34 @@ const styles = StyleSheet.create({
   modelRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 4,
+  },
+  modelTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
+    justifyContent: 'flex-start',
+  },
+  modelTimeButton: {
+    backgroundColor: '#f9fafb',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    alignItems: 'center',
+    minWidth: 90,
+  },
+  modelTimeButtonText: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  timeSeparator: {
+    marginHorizontal: 8,
+    fontSize: 14,
+    color: '#6b7280',
+    fontWeight: 'bold',
   },
   // Row styles for UPH, Model, Target, and Actual (Qty)
   uphInput: {
@@ -1098,6 +1284,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     alignItems: 'center',
+    marginLeft: 8,
   },
   rowContainer: {
     flexDirection: 'row',
@@ -1143,6 +1330,15 @@ const styles = StyleSheet.create({
   dropdownScroll: {
     maxHeight: 220,
     backgroundColor: '#fff',
+  },
+  dropdownWithButtons: {
+    flexDirection: 'row',
+    backgroundColor: '#fff', 
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    overflow: 'hidden',
+    elevation: 3, 
   },
   dropdownItem: {
     padding: 12,
