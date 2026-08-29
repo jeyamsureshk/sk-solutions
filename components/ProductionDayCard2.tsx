@@ -1,22 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  Platform,
-  UIManager,
-  Pressable,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { ProductionRecord } from '@/types/database';
-import { Edit2, Trash2 } from 'lucide-react-native';
+import { Pencil, Trash2, Bookmark } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 interface ProductionDayCardProps {
   team: string;
@@ -26,19 +13,6 @@ interface ProductionDayCardProps {
   onDelete: (id: string) => void;
 }
 
-// Whiteboard Palette
-const BOARD_COLORS = {
-  border: '#000080',    // Navy Blue
-  textRed: '#D32F2F',   // Red Marker
-  textBlack: '#000', // Black Marker
-  textBlue: '#2563EB',  // Blue Marker
-  bg: '#FFFFFF',        // Whiteboard
-  headerBg: '#F3F4F6',  // Light tint
-  error: '#DC2626',     // Red for errors
-  brown: '#000',     // Dark Brown for normal handwriting
-  divider: '#E5E7EB',   // Light Gray
-};
-
 function ProductionDayCard({
   team,
   date,
@@ -46,92 +20,194 @@ function ProductionDayCard({
   onEdit,
   onDelete,
 }: ProductionDayCardProps) {
-
-  // --- Team Color Coding ---
   const teamColors: Record<string, string> = {
-    'THT Panel': '#3b82f6', 'THT Module': '#f59e0b', 'FG Panel': '#1e40af', 'FG Module': '#3341a5',
-    'Packing Panel': '#0f866e', 'Packing Module': '#f43f5e', 'SMT': '#4a7915', 'Fabrication': '#f97316',
-    'IQC': '#0ea5e9', 'FQC Panel': '#8b5cf6', 'FQC Module': '#ec4899', 'Cleaning': '#f87171',
-    'Stores': '#6b7280', 'Kitting': '#10b981', 'Logistics': '#facc15', 'SCM': '#d97706',
-    'Engineering': '#2563eb', 'D&D': '#e11d48', 'Products': '#65a30d', 'Maintenance': '#9ca3af',
-    'IT': '#e879f9', 'SAP': '#0284c7', 'Accounts': '#a855f7', 'Administration': '#7c3aed',
-    'Human Resources': '#6366f1', 'Sales & Marketing': '#db2777', 'Customer Support': '#14b8a6',
+    'THT Panel': '#3b82f6',
+    'THT Accessories': '#f59e0b',
+    'FG Panel': '#1e40af',
+    'FG Accessories': '#3341a5',
+    'Packing Panel': '#0f866e',
+    'Packing Accessories': '#f43f5e',
+    'SMT':'#4a7915ff',
+    'IQC': '#0ea5e9',
+    'Stores': '#6b7280',
+    'Kitting': '#10b981',
+    'Cleaning': '#f87171',
+    'FQC Panel': '#8b5cf6',
+    'FQC Accessories': '#ec4899',
+    'Logistics': '#facc15',
+    'Accounts': '#a855f7',
+    'Administration': '#7c3aed',
+    'Customer Support': '#14b8a6',
+    'D&D': '#e11d48',
+     'Engineering': '#2563eb',
+    'Fabrication': '#f97316',
+    'Human Resources': '#6366f1',
+    'IT': '#e879f9',
+    'Maintenance': '#9ca3af',
+    'Products': '#65a30d',
+    'Sales & Marketing': '#db2777',
+    'SAP': '#0284c7',
+    'SCM': '#d97706',
   };
 
-  const teamAccent = teamColors[team] || BOARD_COLORS.textRed;
+  const teamAccent = teamColors[team] || '#6b7280';
+
+  const formatDate = (dateString: string) => {
+    // Handle different date formats
+    let date;
+    if (dateString.includes('-')) {
+      // Assume YYYY-MM-DD format
+      date = new Date(dateString + 'T00:00:00');
+    } else {
+      // Try to parse as is
+      date = new Date(dateString);
+    }
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return dateString; // Return original if parsing fails
+    }
+
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const formatHour = (hour: number) => {
+    const wholeHour = Math.floor(hour);
+    const minutes = (hour % 1) * 60;
+    const period = wholeHour >= 12 ? '' : '';
+    const displayHour = wholeHour % 12 || 12;
+    return `${displayHour}:${minutes.toString().padStart(2, '0')} ${period}`;
+  };
+
+  const renderRemarks = (text: string) => {
+    const lines = text.split(/\r?\n/);
+
+    return lines.map((line, lineIndex) => {
+      const lower = line.toLowerCase();
+      const hasErrorWord =
+        lower.includes("problem") ||
+        lower.includes("issue") ||
+        lower.includes("fault") ||
+        lower.includes("delay") ||
+        lower.includes("drv") ||
+        lower.includes("missing") ||
+        lower.includes("damage") ||
+        lower.includes("shortage");
+
+      // Split line further into styled parts including markers
+      const parts = line.split(/(@.*?@|&.*?&|\*.*?\*|~.*?~)/);
+
+      return (
+        <Text
+          key={lineIndex}
+          style={[
+            { marginBottom: 3, fontSize: 12, lineHeight: 14 },
+            hasErrorWord ? { color: "#d33" } : { color: "#78350f" }
+          ]}
+        >
+          {parts.map((part, index) => {
+            const partLower = part.toLowerCase();
+
+            // underline "offline" word
+            if (partLower.includes("offline work")) {
+              return (
+                <Text
+                  key={index}
+                  style={{
+                    textDecorationLine: "underline",
+                    fontSize: 12,
+                  }}
+                >
+                  {part}
+                </Text>
+              );
+            }
+
+            if (part.startsWith("@") && part.endsWith("@")) {
+              return (
+                <Text key={index} style={{ fontWeight: "bold", color: "green", fontSize: 12 }}>
+                  {part.slice(1, -1)}
+                </Text>
+              );
+            }
+            if (part.startsWith("&") && part.endsWith("&")) {
+              return (
+                <Text key={index} style={{ fontWeight: "bold", color: "red", fontSize: 12 }}>
+                  {part.slice(1, -1)}
+                </Text>
+              );
+            }
+            if (part.startsWith("*") && part.endsWith("*")) {
+              return (
+                <Text
+                  key={index}
+                  style={{
+                    textDecorationLine: "underline",
+                    color: "black",
+                    fontSize: 12,
+                  }}
+                >
+                  {part.slice(1, -1)}
+                </Text>
+              );
+            }
+            if (part.startsWith("~") && part.endsWith("~")) {
+              return (
+                <Text key={index} style={{ textDecorationLine: "line-through", fontSize: 11 }}>
+                  {part.slice(1, -1)}
+                </Text>
+              );
+            }
+            return <Text key={index} style={{ fontSize: 12 }}>{part}</Text>;
+          })}
+        </Text>
+      );
+    });
+  };
+
+  const [expandedRemarks, setExpandedRemarks] = useState<Record<string, boolean>>({});
   const [canModifyRecords, setCanModifyRecords] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<ProductionRecord | null>(null);
-
-  // --- Logic: Time Formatter ---
-  const to12Hour = (hour24: number, minute: number = 0) => {
-    const period = hour24 >= 12 ? '' : '';
-    const h = hour24 % 12 || 12; 
-    const m = minute.toString().padStart(2, '0');
-    return `${h}:${m} ${period}`;
-  };
-
-  const getTimeRange = (hour: number) => {
-    if (hour === 9 || hour === 9.0) {
-      return { start: "8:30 ", end: "9:00 " };
-    }
-    const endH = Math.floor(hour);
-    const startH = endH - 1;
-    return { start: to12Hour(startH), end: to12Hour(endH) };
-  };
-
-  const formatDate = (dateString: string) => {
-    const d = new Date(dateString.includes('-') ? dateString + 'T00:00:00' : dateString);
-    if (isNaN(d.getTime())) return dateString;
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
-  };
-
-  // --- Logic: Quantity Breakdown ---
-  const getActualQtyDisplay = (record: ProductionRecord) => {
-    if (record.item && Array.isArray(record.item) && record.item.length > 0) {
-      return record.item.map((i: any) => i.quantity).join(' + ');
-    }
-    return record.units_produced;
-  };
-
-  // --- Logic: Remarks Parser ---
-  const renderRemarks = (text: string) => {
-    if (!text) return null;
-    const lines = text.split('\n');
-    return (
-      <View style={{ width: '100%' }}>
-        {lines.map((line, index) => {
-           if (!line.trim()) return null;
-           const lower = line.toLowerCase();
-           const isError = ["problem", "issue", "fault", "delay", "missing", "damage", "shortage"].some(w => lower.includes(w));
-           return (
-             <Text key={index} style={[styles.tdHandwriting, { color: isError ? BOARD_COLORS.error : BOARD_COLORS.brown, marginBottom: 2 }]}>
-               {line}
-             </Text>
-           );
-        })}
-      </View>
-    );
-  };
 
   useEffect(() => {
     const checkOwnership = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: profile } = await supabase.from('profiles').select('email').eq('id', user.id).single();
-      if (profile) {
-        const { data: operator } = await supabase.from('operators').select('id').eq('email', profile.email).single();
-        if (operator) {
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', user.id)
+        .single();
+
+      if (profile && !profileError) {
+        const { data: operator, error: operatorError } = await supabase
+          .from('operators')
+          .select('id')
+          .eq('email', profile.email)
+          .single();
+
+        if (operator && !operatorError) {
           const permissions: Record<string, boolean> = {};
-          records.forEach(r => permissions[r.id] = operator.id === r.operator_id);
+          records.forEach(record => {
+            permissions[record.id] = operator.id === record.operator_id;
+          });
           setCanModifyRecords(permissions);
         }
       }
     };
+
     checkOwnership();
   }, [records]);
 
-  // --- Handlers ---
+  const toggleRemarks = (recordId: string) => {
+    setExpandedRemarks(prev => ({
+      ...prev,
+      [recordId]: !prev[recordId]
+    }));
+  };
+
   const handleLongPress = (record: ProductionRecord) => {
     if (!canModifyRecords[record.id]) return;
     setSelectedRecord(record);
@@ -139,392 +215,464 @@ function ProductionDayCard({
   };
 
   const handleEdit = () => {
-    if (selectedRecord) { onEdit(selectedRecord); setModalVisible(false); setSelectedRecord(null); }
+    if (selectedRecord) {
+      onEdit(selectedRecord);
+      setModalVisible(false);
+      setSelectedRecord(null);
+    }
   };
 
   const handleDelete = () => {
-    if (selectedRecord) { onDelete(selectedRecord.id); setModalVisible(false); setSelectedRecord(null); }
+    if (selectedRecord) {
+      onDelete(selectedRecord.id);
+      setModalVisible(false);
+      setSelectedRecord(null);
+    }
+  };
+
+  const handleCancel = () => {
+    setModalVisible(false);
+    setSelectedRecord(null);
   };
 
   return (
-    <View style={styles.boardWrapper}>
-      <View style={styles.boardContainer}>
-
-        {/* --- Info Row --- */}
-        <View style={styles.infoRow}>
-          <View style={styles.infoCol}>
-            <Text style={styles.infoLabel}>LINE : <Text style={[styles.infoValueRed, { color: teamAccent }]}>{team}</Text></Text>
-          </View>
-          <View style={styles.infoCol}>
-            <Text style={styles.infoLabel}>SHIFT : <Text style={styles.infoValueRed}>General</Text></Text>
-          </View>
-          <View style={styles.infoCol}>
-            <Text style={styles.infoLabel}>DATE : <Text style={styles.infoValueRed}>{formatDate(date)}</Text></Text>
+    <LinearGradient
+      colors={['#fdfcfb', '#efdfcf']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { borderLeftColor: teamAccent }]}
+    >
+      {/* Header with Date and Team */}
+      <View style={styles.header}>
+        <View style={styles.dateRow}>
+          <Bookmark size={19} color={teamAccent} fill={teamAccent} style={styles.bookmarkIcon} />
+          <View>
+            <Text style={styles.date}>{formatDate(date)}</Text>
+            <Text style={styles.team}>{team}    </Text>
           </View>
         </View>
-
-        {/* --- Table Grid --- */}
-        <View style={styles.tableContainer}>
-          
-          {/* Table Head */}
-          <View style={styles.tableHeaderRow}>
-            <View style={[styles.cell, styles.colHour]}>
-              <Text style={styles.thText}>HOURS</Text>
-            </View>
-            <View style={[styles.cell, styles.colModel]}>
-              <Text style={styles.thText}>MODEL</Text>
-            </View>
-            <View style={[styles.cell, styles.colMP]}>
-              <Text style={styles.thText}>MP</Text>
-            </View>
-            {/* Split Header */}
-            <View style={[styles.cell, styles.colQty]}>
-              <View style={styles.splitHeaderContainer}>
-                 <Text style={[styles.thText, styles.splitTextTopLeft]}>ACT</Text>
-                 <View style={styles.diagonalLineHeader} />
-                 <Text style={[styles.thText, styles.splitTextBottomRight]}>PLN</Text>
-              </View>
-            </View>
-            <View style={[styles.cell, styles.colRemarks, { borderRightWidth: 0 }]}>
-              <Text style={styles.thText}>REMARKS</Text>
-            </View>
-          </View>
-
-          {/* Table Body */}
-          {records.map((record, index) => {
-            const timeRange = getTimeRange(record.hour);
-
-            return (
-              <Pressable 
-                key={record.id}
-                style={({ pressed }) => [
-                  styles.tableRow,
-                  pressed && { backgroundColor: '#F0F9FF' }
-                ]}
-                onLongPress={() => handleLongPress(record)}
-              >
-                {/* 1. HOURS */}
-                <View style={[styles.cell, styles.colHour]}>
-                  <Text style={styles.tdHour}>{timeRange.start}</Text>
-                  <Text style={styles.tdHour}>{timeRange.end}</Text>
-                </View>
-
-                {/* 2. MODEL */}
-                <View style={[styles.cell, styles.colModel]}>
-                  {record.item && Array.isArray(record.item) ? (
-                     record.item.map((item: any, idx: number) => (
-                       <View key={idx} style={{ width: '100%' }}>
-                         <Text style={styles.tdText}>
-                           {item.model} 
-                         </Text>
-                         {/* Light Divider */}
-                         {idx < record.item.length - 1 && (
-                           <View style={styles.modelDivider} />
-                         )}
-                       </View>
-                     ))
-                  ) : <Text style={styles.tdText}>-</Text>}
-                </View>
-
-                {/* 3. MAN POWER */}
-                <View style={[styles.cell, styles.colMP]}>
-                  <Text style={[styles.tdText, { fontSize: 12 }]}>{record.manpower}</Text>
-                </View>
-
-                {/* 4. QTY */}
-                <View style={[styles.cell, styles.colQty]}>
-                   <View style={styles.splitCellContainer}>
-                      <Text style={[styles.qtyActual, styles.qtyRotated]}>
-                        {getActualQtyDisplay(record)}
-                      </Text>
-                      <View style={styles.diagonalLineCell} />
-                      <Text style={[styles.qtyPlan, styles.qtyRotated]}>
-                        {record.target_units}
-                      </Text>
-                   </View>
-                </View>
-
-                {/* 5. REMARKS */}
-                <View style={[styles.cell, styles.colRemarks, { borderRightWidth: 0 }]}>
-                  {renderRemarks(record.remarks || "")}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* --- Action Modal --- */}
-        <Modal
-          animationType="fade"
-          transparent={true}
-          visible={modalVisible}
-          onRequestClose={() => setModalVisible(false)}
-        >
-          <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalHeaderTitle}>Options</Text>
-              <TouchableOpacity style={styles.modalOption} onPress={handleEdit}>
-                <Edit2 size={18} color="#000080" />
-                <Text style={styles.modalText}>Edit Entry</Text>
-              </TouchableOpacity>
-              <View style={styles.modalDivider} />
-              <TouchableOpacity style={styles.modalOption} onPress={handleDelete}>
-                <Trash2 size={18} color="#D32F2F" />
-                <Text style={[styles.modalText, { color: '#D32F2F' }]}>Delete Entry</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Modal>
-
       </View>
-    </View>
+
+      {/* Table Header */}
+      <View style={styles.tableHeader}>
+        <Text style={[styles.tableHeaderText, { flex: .9 }]}>Time</Text>
+        <Text style={[styles.tableHeaderText, { flex: 0.8 }]}>  MP</Text>
+        <Text style={[styles.tableHeaderText, { flex: 2.9 }]}>Model Names</Text>
+        <Text style={[styles.tableHeaderText, { flex: 1 }]}>Target</Text>
+        <Text style={[styles.tableHeaderText, { flex: 1 }]}>Actual</Text>
+        <Text style={[styles.tableHeaderText, { flex: 1.6}]}>Remarks</Text>
+      </View>
+
+      {/* Records as Table Rows */}
+      {records.map((record, index) => (
+        <TouchableOpacity key={record.id} style={[styles.tableRow, index % 2 === 0 ? styles.evenRow : styles.oddRow]} onLongPress={() => handleLongPress(record)}>
+          <Text style={[styles.tableCell, { flex: .9 }]}>{formatHour(record.hour)}</Text>
+          <Text style={[styles.tableCell, { flex: 0.8 }]}>{record.manpower}</Text>
+          
+          {/* Mapped Models with specific Target and Actual logic */}
+          <View style={{ flex: 4.9 }}>
+            {record.item && Array.isArray(record.item) && record.item.length > 0 ? (
+              record.item.map((item: any, idx: number) => {
+                const targetVal = Number(item.target) || 0;
+                const actualVal = Number(item.quantity) || 0;
+                const isGood = actualVal >= targetVal; // Check if Actual is greater than or equal to Target
+
+                return (
+                  <View key={idx}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {/* Model Text */}
+                      <Text 
+                        style={[styles.modelText, { flex: 2.9, flexWrap: 'wrap', marginRight: 6 }]} 
+                        numberOfLines={2}
+                      >
+                        {item.model + ' '}
+                      </Text>
+
+                      {/* Individual Target */}
+                      <Text 
+                        style={[styles.qtyText, { flex: 1, textAlign: 'center' }]}
+                      >
+                        {targetVal}
+                      </Text>
+
+                      {/* Individual Actual with conditional coloring */}
+                      <Text 
+                        style={[
+                          styles.qtyText, 
+                          { flex: 1, textAlign: 'center' },
+                          { color: isGood ? '#166534' : '#991b1b' } // Dark Green if good, Dark Red if bad
+                        ]}
+                      >
+                        {actualVal}
+                      </Text>
+                    </View>
+
+                    {/* Divider line if multiple models */}
+                    {record.item.length > 1 && idx < record.item.length - 1 && (
+                      <View style={{ borderBottomWidth: .2, borderBottomColor: '#ccc', marginVertical: 2 }} />
+                    )}
+                  </View>
+                );
+              })
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                 <Text style={[styles.noDataText, { flex: 2.9, textAlign: 'center' }]}>N/A</Text>
+                 <Text style={[styles.noDataText, { flex: 1, textAlign: 'center' }]}>-</Text>
+                 <Text style={[styles.noDataText, { flex: 1, textAlign: 'center' }]}>-</Text>
+              </View>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.tableCell, { flex: 1.5 }]}
+            onPress={() => toggleRemarks(record.id)}
+          >
+            <Text style={styles.remarksText} numberOfLines={1}>
+              {record.remarks ? `${record.remarks.substring(0, 20)}${record.remarks.length > 20 ? '...' : ''}` : 'N/A'}
+            </Text>
+          </TouchableOpacity>
+          <View style={[styles.tableCell, { flex: 0, flexDirection: 'row', justifyContent: 'center' }]}></View>
+        </TouchableOpacity>
+      ))}
+
+      {/* Expanded Remarks */}
+      {Object.entries(expandedRemarks).map(([recordId, isExpanded]) => {
+        if (!isExpanded) return null;
+        const record = records.find(r => r.id === recordId);
+        if (!record?.remarks) return null;
+        return (
+          <View key={`remarks-${recordId}`} style={styles.expandedRemarks}>
+            <Text style={styles.expandedRemarksLabel}>Full Remarks for {formatHour(record.hour)}:</Text>
+            <View style={{ flexDirection: "column" }}>
+              {renderRemarks(record.remarks)}
+            </View>
+          </View>
+        );
+      })}
+
+      {/* Custom Modal for Edit/Delete Options */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={handleCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Actions</Text>
+            
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={handleEdit}
+            >
+              <Text style={[styles.modalButtonText, styles.editButtonText]}>Edit</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={handleDelete}
+            >
+              <Text style={[styles.modalButtonText, styles.deleteButtonText]}>Delete</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={handleCancel}
+            >
+              <Text style={[styles.modalButtonText, styles.cancelButtonText]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </LinearGradient>
   );
 }
 
 export default React.memo(ProductionDayCard);
 
 const styles = StyleSheet.create({
-  boardWrapper: {
-    padding: 2,
+  container: {
+    borderRadius: 12,
+    padding: 15,
+    paddingLeft: 12,
     marginBottom: 10,
-  },
-  boardContainer: {
-    backgroundColor: BOARD_COLORS.bg,
-    borderWidth: 2,
-    borderColor: BOARD_COLORS.border,
-    borderRadius: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
+    shadowRadius: 2,
     elevation: 3,
   },
-
-  // --- Header ---
-  mainHeader: {
+  header: {
     flexDirection: 'row',
-    borderBottomWidth: 2,
-    borderBottomColor: BOARD_COLORS.border,
-    height: 45,
-    backgroundColor: '#fff',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  logoArea: {
-    width: 70,
-    borderRightWidth: 2,
-    borderRightColor: BOARD_COLORS.border,
-    justifyContent: 'center',
+  dateTimeContainer: {
+    flex: 1,
+  },
+  dateRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  logoText: {
-    fontWeight: '900',
-    color: BOARD_COLORS.border,
+  bookmarkIcon: {
+    marginRight: 4,
+  },
+  date: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  team: {
     fontSize: 14,
+    color: '#6b7280',
   },
-  logoSubText: { fontSize: 5, color: '#555' },
-  titleArea: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  recordContainer: {
+    marginTop: 8,
+    paddingTop: 8,
   },
-  dashboardTitle: {
-    color: BOARD_COLORS.border,
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
+  recordSeparator: {
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    paddingTop: 12,
   },
-
-  // --- Info Row ---
-  infoRow: {
+  recordHeader: {
     flexDirection: 'row',
-    borderBottomWidth: 2,
-    borderBottomColor: BOARD_COLORS.border,
-    backgroundColor: '#fff',
-    height: 30,
-  },
-  infoCol: {
-    flex: 1,
-    borderRightWidth: 1,
-    borderRightColor: BOARD_COLORS.border,
-    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  time: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  actionsContainer: {
+    flexDirection: 'row',
     gap: 4,
   },
-  infoLabel: {
-    color: BOARD_COLORS.border,
-    fontWeight: 'bold',
-    fontSize: 10,
+  editButton: {
+    padding: 6,
+    backgroundColor: '#effaff',
+    borderRadius: 6,
   },
-  infoValueRed: {
-    color: BOARD_COLORS.textRed,
-    fontFamily: Platform.OS === 'ios' ? 'Marker Felt' : 'sans-serif-medium',
-    fontSize: 12,
+  deleteButton: {
+    padding: 6,
+    backgroundColor: '#fef6f2',
+    borderRadius: 6,
   },
-
-  // --- Table Layout ---
-  tableContainer: {
-    backgroundColor: '#fff',
-  },
-  tableHeaderRow: {
+  infoRow: {
     flexDirection: 'row',
-    borderBottomWidth: 2,
-    borderBottomColor: BOARD_COLORS.border,
-    height: 40,
-    backgroundColor: '#fff',
+    marginBottom: 8,
+    gap: 16,
+  },
+  infoItem: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1f2937',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 8,
+  },
+  statBox: {
+    flex: 0,
+    backgroundColor: '#fdfcfb',
+    borderRadius: 6,
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 10,
+    color: '#6b7280',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  statValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1f2937',
+    textAlign: 'center',
+  },
+  itemsInline: {
+    flex: 1,
+    backgroundColor: '#f1fff1',
+    borderRadius: 6,
+    padding: 6,
+    marginLeft: 4,
+    justifyContent: 'center',
+  },
+  itemsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0c4a6e',
+    marginBottom: 4,
+  },
+  itemText: {
+    fontSize: 12,
+    color: '#0c4a6e',
+    lineHeight: 16,
+  },
+  remarksContainer: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 6,
+    padding: 6,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f59e0b',
+    marginTop: 6,
+  },
+  remarksLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400e',
+    marginBottom: 2,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#f3f4f6',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    marginBottom: 4,
+  },
+  tableHeaderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+    textAlign: 'center',
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: BOARD_COLORS.border,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    alignItems: 'center',
   },
-
-  // --- Grid Cells ---
-  cell: {
-    borderRightWidth: 1,
-    borderRightColor: BOARD_COLORS.border,
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    paddingTop:4,
-    paddingBottom:4,
-    minHeight: 45, // Consistent base height
+  evenRow: {
+    backgroundColor: '#fafafa',
   },
-  thText: {
-    color: BOARD_COLORS.border,
-    fontWeight: 'bold',
-    fontSize: 9,
+  oddRow: {
+    backgroundColor: '#ffffff',
+  },
+  tableCell: {
+    fontSize: 12,
+    color: '#1f2937',
     textAlign: 'center',
+    paddingHorizontal: 2,
   },
-
-  // --- Columns Config (Applied to both Header and Body) ---
-  colHour: { 
-    width: 40, 
-    alignItems: 'center' 
-  },
-  colModel: { 
-    flex: 1.5, 
-    alignItems: 'center', // Align text left
-    justifyContent: 'center', // Align top
-    paddingLeft: 4 
-  },
-  colMP: { 
-    width: 30, 
-    alignItems: 'center' 
-  },
-  colQty: { 
-    width: 80, 
-    padding: 0 // No padding for split cell
-  },
-  colRemarks: { 
-    flex: 2, 
-    alignItems: 'center', // Align text left
-    justifyContent: 'center', // Align top
-    paddingLeft: 4,
-    paddingTop: 4,
-  }, 
-
-  // --- Cell Typography ---
-  tdHour: {
-    color: BOARD_COLORS.textRed,
-    fontFamily: Platform.OS === 'ios' ? 'Marker Felt' : 'sans-serif-medium',
-    fontSize: 10,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  tdText: {
-    color: BOARD_COLORS.textBlack,
-    fontFamily: Platform.OS === 'ios' ? 'Marker Felt' : 'sans-serif-medium',
+  modelText: {
     fontSize: 11,
-    flexWrap: 'wrap', 
+    color: '#05a',
+    lineHeight: 17,
   },
-  tdHandwriting: {
-    fontFamily: Platform.OS === 'ios' ? 'Marker Felt' : 'sans-serif-medium',
-    fontSize: 10,
-    lineHeight: 12,
-    flexWrap: 'wrap',
+  qtyText: {
+  fontSize: 11,
+  color: '#05a',
+  lineHeight: 18,
+  fontWeight: 'bold',
+    },
+  noDataText: {
+    fontSize: 11,
+    color: '#9ca3af',
+    fontStyle: 'italic',
   },
-
-  // --- Model Divider ---
-  modelDivider: {
-    height: 1,
-    backgroundColor: BOARD_COLORS.divider,
-    width: '90%', 
-    alignSelf: 'flex-start',
-    marginVertical: 4,
+  remarksText: {
+    fontSize: 11,
+    color: '#6b7280',
   },
-
-  // --- Diagonal Split Logic ---
-  splitHeaderContainer: {
-    flex: 1,
-    width: '100%',
-    position: 'relative',
-    overflow: 'hidden',
+  expandedRemarks: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f59e0b',
   },
-  splitCellContainer: {
-    flex: 1,
-    width: '100%',
-    position: 'relative',
-    overflow: 'hidden',
-    height: '100%',
-    minHeight: 45,
+  expandedRemarksLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400e',
+    marginBottom: 4,
   },
-diagonalLineHeader: {
-    position: 'absolute',
-    backgroundColor: BOARD_COLORS.border,
-    height: 1,
-    width: '210%',      // Oversized to ensure corner-to-corner coverage
-    top: '40%',         // Center vertically
-    left: '-50%',       // Center horizontally relative to width: 200%
-    transform: [{ rotate: '-25deg' }], // Slight angle adjustment for cell aspect ratio
-  },
-  diagonalLineCell: {
-    position: 'absolute',
-    backgroundColor: BOARD_COLORS.border,
-    height: 1,
-    width: '200%',
-    top: '50%',
-    left: '-50%',
-    transform: [{ rotate: '-25deg' }],
-  },
-  
-  splitTextTopLeft: { position: 'absolute', top: 8, left: 8, fontSize: 8 },
-  splitTextBottomRight: { position: 'absolute', bottom: 8, right: 8, fontSize: 8 },
-  
-  qtyRotated: { transform: [{ rotate: '-25deg' }] }, // Text rotation matches line angle roughly
-  qtyActual: { position: 'absolute', top: 17, left: 3, fontWeight: 'bold', fontSize: 9, color: BOARD_COLORS.textBlack, textAlign: 'left' },
-  qtyPlan: { position: 'absolute', bottom: 12, right: 8, fontWeight: 'bold', fontSize: 9, color: BOARD_COLORS.textBlack, textAlign: 'right' },
-
-  // --- Modal ---
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    flex: 5,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    width: 250,
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 8,
-    elevation: 5,
-  },
-  modalHeaderTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: BOARD_COLORS.border,
-  },
-  modalOption: {
-    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    width: '70%',
+    maxWidth: 320,
     alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 10,
   },
-  modalText: {
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
     fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 16,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', 
+    marginTop: 20,
+  },
+ modalButton: {
+  paddingVertical: 12,
+  width: '100%',
+  alignItems: 'center',
+  borderBottomWidth: StyleSheet.hairlineWidth,
+  borderBottomColor: '#e5e7eb',
+},
+  editModalButton: {
+    backgroundColor: '#e0f2fe',
+  },
+  deleteModalButton: {
+    backgroundColor: '#fee2e2',
+  },
+  cancelModalButton: {
+    backgroundColor: '#f3f4f6',
+  },
+  modalButtonText: {
+    marginLeft: 6,
+    fontSize: 16,
     fontWeight: '600',
   },
-  modalDivider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginVertical: 4,
-  }
+  editButtonText: { color: '#2563eb' },
+  deleteButtonText: { color: '#ef4444' },
+  cancelButtonText: { color: '#374151' },
+
 });

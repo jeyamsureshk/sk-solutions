@@ -151,24 +151,7 @@ export default function TabLayout() {
           }}
         />
 
-        <Tabs.Screen
-          name="study-materials"
-          options={{
-            title: 'Study Materials',
-            tabBarLabel: 'Reference', // Shortened label slightly to prevent crowding the tab bar
-            tabBarIcon: ({ size, color }) => <BookOpen size={size} color={color} />,
-            headerRight: () => (
-              <View style={{ flexDirection: 'row', marginRight: 16 }}>
-                <TouchableOpacity 
-                  onPress={() => setPasswordVisible(true)} 
-                  style={styles.headerBtn}
-                >
-                  <Text style={styles.headerBtnText}>+ Add Materials </Text>
-                </TouchableOpacity>
-              </View>
-            ),
-          }}
-        />
+
 
         {/* --- NEW MESSAGES TAB --- */}
         <Tabs.Screen

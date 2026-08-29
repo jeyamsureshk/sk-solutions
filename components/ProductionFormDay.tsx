@@ -4,20 +4,19 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  Modal,
   Animated,
   Easing,
+  Modal,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Trash2, Plus, X, RotateCcw, Camera, Clock, Users, Target, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { Trash2, Plus, X, RotateCcw, Camera, Clock, Users, ChevronDown, ChevronUp, Earth, Satellite } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { ProductionRecord, ProductionRecordInsert } from '@/types/database';
 import { useItems, type Item } from '@/hooks/useItems';
@@ -73,6 +72,17 @@ const REMARK_SUGGESTIONS = [
 ];
 
 // --- HELPERS ---
+
+// CRASH FIX: Safe date constructor to prevent "Invalid Date" native crash
+const getSafeDateFromHour = (hourStr: string) => {
+  const d = new Date();
+  const hStr = String(hourStr);
+  const h = parseInt(hStr.split('.')[0], 10) || 0;
+  const m = hStr.includes('.5') ? 30 : 0;
+  d.setHours(h, m, 0, 0);
+  return d;
+};
+
 const getDefaultTimes = (hourStr: string) => {
   const hourNum = parseFloat(hourStr);
   if (isNaN(hourNum)) return { start: '', end: '' };
@@ -114,6 +124,55 @@ const extractMetricsFromRemarks = (text: string) => {
   return { planDt: planned ? planned.toString() : "", unplanDt: unplanned ? unplanned.toString() : "", defectQty: defects ? defects.toString() : "" };
 };
 
+const addMinutesToTime = (time: string, minutes: number) => {
+  if (!time || !Number.isFinite(minutes)) return time;
+  const [hours, mins] = time.split(':').map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(mins)) return time;
+
+  const totalMinutes = (hours * 60 + mins + Math.max(0, Math.ceil(minutes))) % (24 * 60);
+  const finalHours = Math.floor(totalMinutes / 60);
+  const finalMinutes = totalMinutes % 60;
+
+  return `${finalHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
+};
+
+// Automatic model timing cascading - Purely based on UPH
+const recalculateModelTimes = (modelList: ModelEntry[]) => {
+  const updated = [...modelList];
+
+  for (let index = 0; index < updated.length; index++) {
+    const current = updated[index];
+
+    // The start time of the current model is the end time of the previous model
+    const startTime = index === 0 ? (current.start_time || '') : (updated[index - 1].end_time || current.start_time || '');
+
+    const targetQty = Number(current.target || 0);
+    const actualQty = Number(current.quantity || 0);
+    const uph = Number(current.uph || 0);
+
+    // Actual Quantity takes precedence over Target Quantity for time estimation
+    let durationMinutes = 0;
+    if (uph > 0) {
+      if (actualQty > 0) {
+        durationMinutes = Math.ceil((actualQty / uph) * 60);
+      } else if (targetQty > 0) {
+        durationMinutes = Math.ceil((targetQty / uph) * 60);
+      }
+    }
+
+    updated[index] = {
+      ...current,
+      start_time: startTime,
+      end_time:
+        startTime && durationMinutes > 0
+          ? addMinutesToTime(startTime, durationMinutes)
+          : current.end_time || startTime,
+    };
+  }
+
+  return updated;
+};
+
 export default function ProductionForm({ onSubmit, onCancel, initialData, onClear }: ProductionFormProps) {
   const router = useRouter();
   const today = new Date().toISOString().split('T')[0];
@@ -153,7 +212,7 @@ export default function ProductionForm({ onSubmit, onCancel, initialData, onClea
   const [currentScrollY, setCurrentScrollY] = useState(0);
   const [dropdownVisible, setDropdownVisible] = useState(false);
 
-const STEP_SIZE = 150; 
+  const STEP_SIZE = 150; 
   const scrollDropdown = (direction: 'up' | 'down') => {
     if (dropdownScrollRef.current) {
       const nextScrollY = direction === 'up' 
@@ -163,6 +222,7 @@ const STEP_SIZE = 150;
       dropdownScrollRef.current.scrollTo({ y: nextScrollY, animated: true });
     }
   };
+  
   const [filteredItems, setFilteredItems] = useState<Item[]>([]);
   const [activeEntryIndex, setActiveEntryIndex] = useState<number | null>(null);
   const [activeModelIndex, setActiveModelIndex] = useState<number | null>(null);
@@ -231,22 +291,20 @@ const STEP_SIZE = 150;
         Each item in the array should represent an hour slot and have this structure:
         {
           "date": "DD/MM/YYYY" (if visible),
-          "hour": "number" (make the time not below 09:00 am,, if two hours near one by one with in  one cell take second hour as hour input)
+          "hour": "number" (make the time not below 09:00 am,, if two hours near one by one with in  one cell take second hour as hour input), dont repeate same hour.
           "manpower": "string",
-          "targetUnits": "string"(if the value is seperate by + symbol add two value)
-          "remarks": "string and if it have line break also add",
-           "planDt": "Analysis the remarks text it contain any "break,change over,meeting,arrangement,5S,offline work" make the time to planned down time (eg."Break 15 Mins" in remarks 15 to planDt)"
-           "unplanDt": "Analysis the remarks text it contain any "delay"" make the time to un planned down time (eg."Delay 15 Mins" in remarks 15 to unplanDt)"
-           "defectQty": "Analysis the remarks text it contain any "issue,fault,drv" make the quantity to defect qty (eg."2 nos cotton fault or 2 nos cotton issue" in remarks 2 to defect qty)"
+          "remarks": "string and if it have one more line add line break also",
+           "planDt": "Analysis the remarks text it contain any 'break,change over,meeting,arrangement,5S,offline work' make the time to planned down time (eg.'Break 15 Mins' in remarks 15 to planDt)"
+           "unplanDt": "Analysis the remarks text it contain any 'delay' make the time to un planned down time (eg.'Delay 15 Mins' in remarks 15 to unplanDt)"
+           "defectQty": "Analysis the remarks text it contain any 'issue,fault,drv' make the quantity to defect qty (eg.'2 nos cotton fault or 2 nos cotton issue' in remarks 2 to defect qty)"
           "models": [
-            { "model": "string", "quantity": number }
-          ] If a row contains a '+' symbol in the Model or Quantity column (e.g., "ModelA + ModelB" or "50 + 30"), 
-            you MUST split them into separate objects in the 'items' array.
-            - Match the first model to the first quantity.
-            - Match the second model to the second quantity.
-            - Model name must space after RE.
+            { "model": "string", "target": number, "quantity": number }
+          ] 
         }
-        The root object should look like: { "date": "YYYY-MM-DD", "entries": [...] }
+        RULES FOR MODELS:
+        - Identify the specific TARGET and ACTUAL quantity for EACH individual model.
+        - If a row contains a '+' symbol (e.g., "ModelA + ModelB" or "50 + 30"), you MUST split them into separate objects in the 'models' array. Match the first model to the first target and first quantity. Match the second model to the second target and quantity.
+        - Model name must space after RE.
         Return ONLY RAW JSON.
       `;
 
@@ -270,21 +328,26 @@ const STEP_SIZE = 150;
           const hourVal = item.hour?.toString() || '0';
           const defaultT = getDefaultTimes(hourVal);
           
+          const parsedModels = Array.isArray(item.models) ? item.models.map((m: any) => ({
+            model: m.model || '',
+            target: m.target?.toString() || '',
+            quantity: m.quantity?.toString() || '',
+            part_number: '', uph: null,
+            start_time: defaultT.start, end_time: defaultT.end
+          })) : [{ model: '', quantity: '', part_number: '', uph: null, target: '', start_time: defaultT.start, end_time: defaultT.end }];
+
+          const summedTarget = parsedModels.reduce((sum, m) => sum + (parseInt(m.target || '0', 10) || 0), 0);
+
           return {
             id: Date.now().toString() + Math.random(),
             hour: hourVal,
             manpower: item.manpower?.toString() || '',
-            targetUnits: item.targetUnits?.toString() || '',
+            targetUnits: summedTarget.toString(),
             remarks: item.remarks || '',
             planDt: item.planDt?.toString() || '',       
             unplanDt: item.unplanDt?.toString() || '',   
             defectQty: item.defectQty?.toString() || '', 
-            models: Array.isArray(item.models) ? item.models.map((m: any) => ({
-                model: m.model || '',
-                quantity: m.quantity,
-                part_number: '', uph: null, target: '',
-                start_time: defaultT.start, end_time: defaultT.end
-            })) : [{ model: '', quantity: '', part_number: '', uph: null, target: '', start_time: defaultT.start, end_time: defaultT.end }]
+            models: parsedModels
           };
         });
         setEntries(newEntries);
@@ -299,18 +362,29 @@ const STEP_SIZE = 150;
     }
   };
 
-  // --- HANDLERS ---
-  const handleClearAll = () => {
+ // --- HANDLERS ---
+  
+  // 1. Separate the actual clearing logic into its own function
+  const executeClear = () => {
+    setEntries([{ 
+      id: Date.now().toString(), 
+      hour: currentHour.toString(), 
+      manpower: '', 
+      targetUnits: '', 
+      remarks: '', 
+      planDt: '', 
+      unplanDt: '', 
+      defectQty: '', 
+      models: [{ model: '', quantity: '', part_number: '', uph: null, target: '', start_time: defTimes.start, end_time: defTimes.end }] 
+    }]);
+    if (onClear) onClear();
+  };
+const handleClearAll = () => {
     Alert.alert("Clear All", "Remove all entries?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Clear", style: "destructive", onPress: () => {
-          setEntries([{ id: Date.now().toString(), hour: currentHour.toString(), manpower: '', targetUnits: '', remarks: '', planDt: '', unplanDt: '', defectQty: '', models: [{ model: '', quantity: '', uph: null, target: '', start_time: defTimes.start, end_time: defTimes.end }] }]);
-          if (onClear) onClear();
-        }
-      }
+      { text: "Clear", style: "destructive", onPress: executeClear }
     ]);
   };
-
   const addEntry = () => {
     const lastEntry = entries[entries.length - 1];
     const lastHour = parseFloat(lastEntry.hour);
@@ -344,18 +418,25 @@ const STEP_SIZE = 150;
       newEntries[index].unplanDt = metrics.unplanDt;
       newEntries[index].defectQty = metrics.defectQty;
     }
+    
     setEntries(newEntries);
   };
 
   // Model & Time Logic
   const updateModel = (entryIndex: number, modelIndex: number, field: keyof ModelEntry, value: any) => {
     const newEntries = [...entries];
-    const models = newEntries[entryIndex].models;
+    let models = newEntries[entryIndex].models;
     models[modelIndex] = { ...models[modelIndex], [field]: value };
 
     if (field === 'target') {
       const totalTarget = models.reduce((sum, item) => sum + (parseInt(item.target || '0', 10) || 0), 0);
       newEntries[entryIndex].targetUnits = totalTarget.toString();
+    }
+
+    // Always recalculate times and cascade them when Target, Quantity, UPH, or manual times change
+    if (['target', 'quantity', 'uph', 'start_time', 'end_time'].includes(field)) {
+      models = recalculateModelTimes(models);
+      newEntries[entryIndex].models = models;
     }
 
     setEntries(newEntries);
@@ -411,9 +492,8 @@ const STEP_SIZE = 150;
         newEntries[entryIndex].manpower = fetchedManpower.toString();
       }
 
-      const models = newEntries[entryIndex].models;
+      let models = newEntries[entryIndex].models;
       
-      // Auto-suggest target based on remaining time
       let usedMinutes = 0;
       for (let i = 0; i < modelIndex; i++) {
         const prev = models[i];
@@ -426,7 +506,9 @@ const STEP_SIZE = 150;
 
       models[modelIndex] = { ...models[modelIndex], part_number: trimmedPartNumber.toUpperCase(), uph: uphValue, target: suggestedQty };
       
-      // Update Target Units total
+      // Auto-recalculate cascading times after successfully pulling the UPH and suggesting target
+      newEntries[entryIndex].models = recalculateModelTimes(models);
+      
       const totalTarget = models.reduce((sum, item) => sum + (parseInt(item.target || '0', 10) || 0), 0);
       newEntries[entryIndex].targetUnits = totalTarget.toString();
       
@@ -436,32 +518,50 @@ const STEP_SIZE = 150;
     }
   };
 
-  // Time Estimations
-  const getModelFinishTime = (target?: string, uph?: number | null) => {
+  const getModelFinishTime = (target?: string | number, uph?: number | null) => {
     const targetQty = Number(target || 0);
     const uphValue = Math.floor(Number(uph || 0));
     if (targetQty <= 0 || uphValue <= 0) return '';
-    return `${Math.ceil((targetQty / uphValue) * 60)} min`;
+    const totalMinutes = Math.ceil((targetQty / uphValue) * 60);
+
+    if (totalMinutes < 60) return `${totalMinutes} min`;
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (mins === 0) return `${hrs} hr`;
+    return `${hrs} hr ${mins} min`;
   };
 
   const getTotalEstimatedTargetTime = (models: ModelEntry[]) => {
     const totalMinutes = models.reduce((sum, item) => {
-      if (Number(item.target || 0) > 0 && Number(item.uph || 0) > 0) return sum + Math.ceil((Number(item.target) / Number(item.uph)) * 60);
+      const uph = Number(item.uph || 0);
+      if (Number(item.target || 0) > 0 && uph > 0) {
+        return sum + Math.ceil((Number(item.target) / uph) * 60);
+      }
       return sum;
     }, 0);
-    return totalMinutes === 0 ? '' : `${totalMinutes} min`;
+    if (totalMinutes === 0) return '';
+    if (totalMinutes < 60) return `${totalMinutes} min`;
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
   };
 
   const getTotalActualEstimatedTime = (models: ModelEntry[]) => {
     const totalMinutes = models.reduce((sum, item) => {
-      if (Number(item.uph || 0) > 0 && Number(item.quantity || 0) > 0) return sum + Math.ceil((Number(item.quantity) / Number(item.uph)) * 60);
+      const uph = Number(item.uph || 0);
+      if (uph > 0 && Number(item.quantity || 0) > 0) {
+        return sum + Math.ceil((Number(item.quantity) / uph) * 60);
+      }
       return sum;
     }, 0);
-    return totalMinutes <= 0 ? '0 min' : `${totalMinutes} min`;
+    if (totalMinutes <= 0) return '0 min';
+    if (totalMinutes < 60) return `${totalMinutes} min`;
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
   };
 
-  // --- SUBMISSION ---
-  const handleSubmitAll = async () => {
+const handleSubmitAll = async () => {
     if (!operatorName.trim() || !team.trim()) {
       Alert.alert('Error', 'Please fill in employee name and team (Profile data missing)'); return;
     }
@@ -481,6 +581,8 @@ const STEP_SIZE = 150;
       const processedModels = entry.models.filter(m => m.model.trim() !== "" || m.quantity !== "").map(m => {
         const targetQty = m.target ? parseInt(m.target, 10) : 0;
         const actualQty = m.quantity === '' ? 0 : Number(m.quantity);
+        const uph = m.uph ?? 0;
+
         return { 
           model: m.model.trim() || "Unspecified", 
           quantity: actualQty,
@@ -489,15 +591,16 @@ const STEP_SIZE = 150;
           target: targetQty > 0 ? targetQty : null,
           start_time: m.start_time || null,
           end_time: m.end_time || null,
-          target_estimated_time: m.uph && targetQty > 0 ? Math.ceil((targetQty / m.uph) * 60) : null,
-          actual_estimated_time: m.uph && actualQty > 0 ? Math.ceil((actualQty / m.uph) * 60) : null,
+          target_estimated_time: uph > 0 && targetQty > 0 ? Math.ceil((targetQty / uph) * 60) : null,
+          actual_estimated_time: uph > 0 && actualQty > 0 ? Math.ceil((actualQty / uph) * 60) : null,
         };
       });
 
       const totalUnits = processedModels.reduce((sum, item) => sum + item.quantity, 0);
+      const totalTarget = processedModels.reduce((sum, item) => sum + (item.target || 0), 0);
         
       const payload: ProductionRecordInsert = {
-        date: date, hour: parseFloat(entry.hour), units_produced: totalUnits, target_units: parseInt(entry.targetUnits) || 0,
+        date: date, hour: parseFloat(entry.hour), units_produced: totalUnits, target_units: totalTarget,
         operator_id: operatorId ? parseInt(operatorId) : null, operator_name: operatorName, team: team, remarks: entry.remarks, manpower: parseInt(entry.manpower) || 0,
         item: processedModels, plan_dt: entry.planDt ? parseFloat(entry.planDt) : null, unplan_dt: entry.unplanDt ? parseFloat(entry.unplanDt) : null, defect_qty: entry.defectQty ? parseInt(entry.defectQty) : null,
       };
@@ -509,12 +612,52 @@ const STEP_SIZE = 150;
     if (errors.length > 0) {
       Alert.alert("Partial Success", `Saved ${successCount} records. Failed: ${errors.length}.`);
     } else {
-      Alert.alert("Success", "All records saved successfully.", [{ text: "OK", onPress: () => { handleClearAll(); router.back(); } }]);
+      // 3. Bypass the confirmation alert here by using executeClear() directly instead of handleClearAll()
+      Alert.alert("Success", "All records saved successfully.", [{ 
+        text: "OK", 
+        onPress: () => { 
+          executeClear(); 
+          router.back(); 
+        } 
+      }]);
     }
   };
 
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    // ONLY update if explicitly setting (Pressing OK)
+    if (event.type === 'set' && selectedDate) {
+      setDate(selectedDate.toISOString().split('T')[0]);
+    }
+  };
+
+  const onTimeChange = (event: any, selectedTime?: Date) => {
+    setShowTimePicker(false);
+    // ONLY update if user explicitly selected a time (pressed OK)
+    if (event.type === 'set' && selectedTime) {
+      const h = selectedTime.getHours();
+      const m = selectedTime.getMinutes();
+      const formatted = m >= 30 ? `${h}.5` : `${h}`;
+      
+      const newEntries = [...entries];
+      if (activeTimeIndex !== null) {
+        newEntries[activeTimeIndex].hour = formatted;
+        
+        const defaultTimes = getDefaultTimes(formatted);
+        newEntries[activeTimeIndex].models = newEntries[activeTimeIndex].models.map(m => ({
+          ...m,
+          start_time: defaultTimes.start,
+          end_time: defaultTimes.end
+        }));
+        
+        setEntries(newEntries);
+      }
+    }
+    setActiveTimeIndex(null);
+  };
+
   return (
-    <SafeAreaView style={[styles.safeArea, { flex: 1 }]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }}>
       <View style={styles.header}>
         <View>
             <Text style={styles.headerTitle}>New Production Record</Text>
@@ -525,7 +668,7 @@ const STEP_SIZE = 150;
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView style={[styles.mainContainer, { flex: 1 }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1, flexDirection: 'column' }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.controlsHeader}>
           <View style={styles.controlRow}>
               <TouchableOpacity style={styles.scanButton} onPress={pickImageAndScan} activeOpacity={0.8}>
@@ -543,9 +686,10 @@ const STEP_SIZE = 150;
           </View>
         </View>
 
-        <ScrollView style={[styles.scrollContainer, { flex: 1 }]} contentContainerStyle={{ paddingBottom: 120 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+        <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 120 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
           {entries.map((entry, index) => {
             const totalProduced = entry.models.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+            const totalTarget = entry.models.reduce((sum, item) => sum + (parseInt(item.target || '0', 10) || 0), 0);
             
             return (
               <View key={entry.id} style={[styles.card, { zIndex: 1000 - index, elevation: 1000 - index }]}>
@@ -568,7 +712,7 @@ const STEP_SIZE = 150;
                          <TouchableOpacity style={styles.timeInput} onPress={() => { setActiveTimeIndex(index); setShowTimePicker(true); }}>
                           <Clock size={18} color="#fff" style={{ marginRight: 8 }} />
                           <Text style={styles.timeInputValue}>
-                            {new Date(`1970-01-01T${entry.hour.includes('.5') ? `${entry.hour.split('.')[0]}:30` : `${entry.hour}:00`}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                            {getSafeDateFromHour(entry.hour).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                           </Text>
                           <View style={{ position: 'absolute', right: 12 }}><ChevronDown size={16} color="#fff" opacity={0.7} /></View>
                         </TouchableOpacity>
@@ -578,7 +722,6 @@ const STEP_SIZE = 150;
                       <View style={styles.modelsSection}>
                           <View style={styles.modelsHeader}>
                              <Text style={styles.sectionTitle}>Models Produced</Text>
-                             <View style={styles.totalBadge}><Text style={styles.totalBadgeText}>Total: {totalProduced}</Text></View>
                           </View>
 
                           {entry.models.map((modelItem, mIndex) => {
@@ -592,14 +735,64 @@ const STEP_SIZE = 150;
                                     value={modelItem.uph != null ? modelItem.uph.toFixed(0) : ''}
                                     editable={false} placeholder="UPH"
                                   />
-                                  <TextInput
-                                    style={[styles.baseInput, styles.modelNameInput]}
-                                    value={modelItem.model} placeholder="Model Name" placeholderTextColor="#cbd5e1"
-                                    onChangeText={(text) => updateModel(index, mIndex, 'model', text)}
-                                    onFocus={() => { setActiveEntryIndex(index); setActiveModelIndex(mIndex); }}
-                                    onBlur={() => setTimeout(() => setDropdownVisible(false), 150)}
-                                  />
-                                  
+                                <View style={styles.modelNameContainer}>
+                                    <TextInput
+                                      style={styles.modelNameInput}
+                                      value={modelItem.model}
+                                      placeholder="Model Name"
+                                      placeholderTextColor="#cbd5e1"
+                                      onChangeText={(text) => updateModel(index, mIndex, 'model', text)}
+                                      onFocus={() => {
+                                        setActiveEntryIndex(index);
+                                        setActiveModelIndex(mIndex);
+                                      }}
+                                      onBlur={() => setTimeout(() => setDropdownVisible(false), 150)}
+                                    />
+
+                                    <View style={styles.modelTimeInside}>
+                                      <TouchableOpacity
+                                        style={styles.inlineTimeButton}
+                                        onPress={() =>
+                                          setModelTimePickerState({
+                                            entryIndex: index,
+                                            modelIndex: mIndex,
+                                            field: 'start_time',
+                                          })
+                                        }
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.inlineTimeText,
+                                            !modelItem.start_time && styles.placeholderTimeText,
+                                          ]}
+                                        >
+                                          {modelItem.start_time || 'Start'}
+                                        </Text>
+                                      </TouchableOpacity>
+
+                                      <Text style={styles.inlineTimeSeparator}> - </Text>
+
+                                      <TouchableOpacity
+                                        style={styles.inlineTimeButton}
+                                        onPress={() =>
+                                          setModelTimePickerState({
+                                            entryIndex: index,
+                                            modelIndex: mIndex,
+                                            field: 'end_time',
+                                          })
+                                        }
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.inlineTimeText,
+                                            !modelItem.end_time && styles.placeholderTimeText,
+                                          ]}
+                                        >
+                                          {modelItem.end_time || 'End'}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
                                   <View style={styles.targetContainer}>
                                     <TextInput
                                       style={[styles.baseInput, styles.targetInput]}
@@ -627,16 +820,7 @@ const STEP_SIZE = 150;
                                   ) : <View style={styles.removeModelPlaceholder} />}
                                 </View>
 
-                                {/* Time Picker Row for Individual Model */}
-                                <View style={styles.modelTimeRow}>
-                                  <TouchableOpacity style={styles.modelTimeButton} onPress={() => setModelTimePickerState({ entryIndex: index, modelIndex: mIndex, field: 'start_time' })}>
-                                    <Text style={styles.modelTimeButtonText}>{modelItem.start_time || 'Start Time'}</Text>
-                                  </TouchableOpacity>
-                                  <Text style={styles.timeSeparator}>-</Text>
-                                  <TouchableOpacity style={styles.modelTimeButton} onPress={() => setModelTimePickerState({ entryIndex: index, modelIndex: mIndex, field: 'end_time' })}>
-                                    <Text style={styles.modelTimeButtonText}>{modelItem.end_time || 'End Time'}</Text>
-                                  </TouchableOpacity>
-                                </View>
+                               
 
                                 {/* Auto-Complete Dropdown */}
                                 {isActiveDropdown && (
@@ -680,7 +864,7 @@ const STEP_SIZE = 150;
                         <View style={[styles.col, { marginRight: 8 }]}>
                             <Text style={styles.label}>Target Units</Text>
                             <View style={[styles.input, styles.metricsBox]}>
-                              <Text style={styles.metricsLargeText}>{entry.targetUnits || 0}</Text>
+                              <Text style={styles.metricsLargeText}>{totalTarget || 0}</Text>
                               <Text style={styles.metricsSmallBlue}>{getTotalEstimatedTargetTime(entry.models) || '0 min'}</Text>
                             </View>
                         </View>
@@ -751,7 +935,7 @@ const STEP_SIZE = 150;
           <TouchableOpacity style={styles.footerSubmitBtn} onPress={handleSubmitAll} activeOpacity={0.9}><Text style={styles.footerSubmitText}>Save {entries.length} Record{entries.length > 1 ? 's' : ''}</Text></TouchableOpacity>
         </View>
 
-        {/* --- MODALS & PICKERS --- */}
+ {/* --- MODALS & PICKERS --- */}
         <Modal visible={isScanning} transparent={true} animationType="fade">
           <View style={styles.loadingOverlay}>
               <View style={styles.loadingBox}>
@@ -766,19 +950,29 @@ const STEP_SIZE = 150;
         </Modal>
 
         {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />}
-        {showTimePicker && <DateTimePicker value={new Date()} mode="time" display="default" onChange={onTimeChange} />}
+        
+        {showTimePicker && activeTimeIndex !== null && (
+          <DateTimePicker 
+            value={getSafeDateFromHour(entries[activeTimeIndex]?.hour || "0")} 
+            mode="time" 
+            display="default" 
+            onChange={onTimeChange} 
+          />
+        )}
+        
         {modelTimePickerState && (
           <DateTimePicker
             value={new Date()} mode="time" display="default"
-            onChange={(_event, selectedTime) => {
+            onChange={(event, selectedTime) => {
               const state = modelTimePickerState;
               setModelTimePickerState(null);
-              if (selectedTime && state) {
+              // ONLY update if explicitly setting (Pressing OK)
+              if (event.type === 'set' && selectedTime && state) {
                 const h = selectedTime.getHours().toString().padStart(2, '0');
                 const m = selectedTime.getMinutes().toString().padStart(2, '0');
-                const newEntries = [...entries];
-                newEntries[state.entryIndex].models[state.modelIndex] = { ...newEntries[state.entryIndex].models[state.modelIndex], [state.field]: `${h}:${m}` };
-                setEntries(newEntries);
+                
+                // Using updateModel cascades changes automatically to the next models
+                updateModel(state.entryIndex, state.modelIndex, state.field, `${h}:${m}`);
               }
             }}
           />
@@ -789,94 +983,548 @@ const STEP_SIZE = 150;
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f8fafc' },
-  mainContainer: { flex: 1, flexDirection: 'column' },
-  scrollContainer: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  mainContainer: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  scrollContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
 
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ffffff', paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
-  headerSubtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
-  closeButton: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 20 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  closeButton: {
+    padding: 8,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 20,
+  },
 
-  controlsHeader: { padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', zIndex: 10 },
-  controlRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  scanButton: { flex: 1, backgroundColor: '#7c3aed', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, elevation: 2, shadowColor: '#7c3aed', shadowOpacity: 0.3, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-  scanButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  dateButton: { flex: 0.8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
-  dateButtonText: { color: '#0f172a', fontWeight: '600', fontSize: 14 },
-  operatorRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 10, padding: 2 },
-  operatorIconBox: { padding: 8, backgroundColor: '#fff', borderRadius: 8, margin: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2 },
-  operatorInput: { flex: 1, paddingHorizontal: 10, fontSize: 14, fontWeight: '500', color: '#475569' },
+  controlsHeader: {
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    zIndex: 10,
+  },
+  controlRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  scanButton: {
+    flex: 1,
+    backgroundColor: '#7c3aed',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    elevation: 2,
+    shadowColor: '#7c3aed',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  scanButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  dateButton: {
+    flex: 0.8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  dateButtonText: {
+    color: '#0f172a',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  operatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    padding: 2,
+  },
+  operatorIconBox: {
+    padding: 8,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    margin: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  operatorInput: {
+    flex: 1,
+    paddingHorizontal: 10,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#475569',
+  },
 
-  card: { backgroundColor: '#ffffff', marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#64748b', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, borderRadius: 16, overflow: 'visible' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#f1f5f9', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  badge: { backgroundColor: '#e0e7ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  badgeText: { color: '#3730a3', fontWeight: '700', fontSize: 12 },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: '#334155' },
-  deleteEntryBtn: { padding: 4 },
-  cardBody: { padding: 16 },
+  card: {
+    backgroundColor: '#ffffff',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#64748b',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    borderRadius: 16,
+    overflow: 'visible',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badge: {
+    backgroundColor: '#e0e7ff',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  badgeText: {
+    color: '#3730a3',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  deleteEntryBtn: {
+    padding: 4,
+  },
+  cardBody: {
+    padding: 16,
+  },
 
-  inputGroup: { marginBottom: 16 },
-  label: { fontSize: 12, fontWeight: '600', color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  timeInput: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#3b82f6', borderRadius: 8, height: 40, paddingHorizontal: 12, position: 'relative' },
-  timeInputValue: { color: '#fff', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  row: { flexDirection: 'row', marginBottom: 16 },
-  col: { flex: 1 },
-  
-  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 10, fontSize: 15, backgroundColor: '#ffffff', color: '#1f1f1f' },
-  metricsBox: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', height: 43, gap: 6, paddingVertical: 4 },
-  metricsLargeText: { fontSize: 18, fontWeight: '700', color: '#1f1f1f' },
-  metricsSmallBlue: { fontSize: 10, fontWeight: '700', color: '#2563eb' },
-  metricsSmallGreen: { fontSize: 10, fontWeight: '700', color: '#10B981' },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  timeInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3b82f6',
+    borderRadius: 8,
+    height: 40,
+    paddingHorizontal: 12,
+    position: 'relative',
+  },
+  timeInputValue: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  row: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  col: {
+    flex: 1,
+  },
 
-  modelsSection: { marginBottom: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 },
-  modelsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#334155' },
-  totalBadge: { backgroundColor: '#ecfdf5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
-  totalBadgeText: { color: '#059669', fontSize: 12, fontWeight: '600' },
-  
-  modelRowContainer: { position: 'relative', marginBottom: 12 },
-  modelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 6 },
-  baseInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, fontSize: 14, color: '#0f172a' },
-  uphInput: { flex: 0.5, textAlign: 'center' },
-  modelNameInput: { flex: 2 },
-  targetContainer: { flex: 0.8, position: 'relative' },
-  targetInput: { paddingBottom: 16, textAlign: 'center' },
-  finishTimeText: { position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#2563eb', fontWeight: '700' },
-  quantityContainer: { flex: 0.8, position: 'relative' },
-  qtyInput: { paddingBottom: 16, textAlign: 'center' },
-  actualTimeText: { position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#10B981', fontWeight: '700' },
-  removeModelBtn: { padding: 6, backgroundColor: '#fef2f2', borderRadius: 8 },
-  removeModelPlaceholder: { width: 30 },
-  
-  modelTimeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  modelTimeButton: { backgroundColor: '#f9fafb', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: '#d1d5db', alignItems: 'center', minWidth: 90 },
-  modelTimeButtonText: { fontSize: 12, color: '#374151', fontWeight: '600' },
-  timeSeparator: { marginHorizontal: 8, fontSize: 14, color: '#6b7280', fontWeight: 'bold' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 15,
+    backgroundColor: '#ffffff',
+    color: '#1f1f1f',
+  },
+  metricsBox: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 43,
+    gap: 6,
+    paddingVertical: 4,
+  },
+  metricsLargeText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f1f1f',
+  },
+  metricsSmallBlue: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  metricsSmallGreen: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#10B981',
+  },
 
-  addModelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, marginTop: 4, borderWidth: 1, borderColor: '#bfdbfe', borderStyle: 'dashed', borderRadius: 8, backgroundColor: '#f8fafc' },
-  addModelText: { color: '#2563eb', fontSize: 12, fontWeight: '600', marginLeft: 6 },
+  modelsSection: {
+    marginBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 16,
+  },
+  modelsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  totalBadge: {
+    backgroundColor: '#ecfdf5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  totalBadgeText: {
+    color: '#059669',
+    fontSize: 12,
+    fontWeight: '600',
+  },
 
-  dropdownContainer: { position: 'absolute', top: 45, left: 0, right: 0, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', zIndex: 99999, elevation: 99999, maxHeight: 180 },
-  dropdownWrapper: { flexDirection: 'row' },
-  dropdownScroll: { flex: 1 },
-  scrollControls: { width: 40, justifyContent: 'space-around', alignItems: 'center', borderLeftWidth: 1, borderLeftColor: '#f3f4f6', backgroundColor: '#fafafa' },
-  arrowButton: { padding: 10, width: '100%', alignItems: 'center' },
-  dropdownItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  dropdownText: { fontSize: 12, color: '#374151' },
+  modelRowContainer: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 6,
+  },
 
-  remarksContainer: { marginTop: 8, position: 'relative' },
-  remarksInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, height: 80, textAlignVertical: 'top', fontSize: 14, color: '#334155' },
+  // --- COMPACT HEIGHT SYNC FIX ---
+  baseInput: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    height: 42, // Lock everything to a small, standard height
+    fontSize: 14,
+    color: '#0f172a',
+  },
+  uphInput: {
+    flex: 0.5,
+    textAlign: 'center',
+  },
+  modelNameContainer: {
+    flex: 2,
+    height: 42,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative', // Added to allow absolute positioning inside
+  },
+  modelNameInput: {
+    flex: 1,
+    width: '100%',
+    paddingHorizontal: 9,
+    paddingTop: 8, 
+    paddingBottom: 16, // Makes room for the time text at the bottom
+    fontSize: 13,
+    color: '#0f172a',
+    backgroundColor: 'transparent',
+    textAlign: 'center',
+  },
+  modelTimeInside: {
+    position: 'absolute', // Locks it to the bottom
+    bottom: 4,            // Matches the 4px bottom of Target/Actual
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between', // Spreads the items across the full width
+  },
+  inlineTimeButton: {
+    paddingHorizontal: 12,
+  },
+  inlineTimeText: {
+    fontSize: 9,         // Matches finishTimeText size
+    fontWeight: '800',   // Matches finishTimeText weight
+    color: '#2563eb',    // Matches finishTimeText blue color
+  },
+  placeholderTimeText: {
+    color: '#94a3b8',
+  },
+  inlineTimeSeparator: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#94a3b8',
+    marginHorizontal: 3,
+  },
+  targetContainer: {
+    flex: 0.8,
+    position: 'relative',
+  },
+  targetInput: {
+    paddingBottom: 16,
+    textAlign: 'center',
+  },
+  finishTimeText: {
+    position: 'absolute',
+    bottom: 4,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    fontSize: 9,
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+  quantityContainer: {
+    flex: 0.8,
+    position: 'relative',
+  },
+  qtyInput: {
+    paddingBottom: 16,
+    textAlign: 'center',
+  },
+  actualTimeText: {
+    position: 'absolute',
+    bottom: 4,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    fontSize: 9,
+    color: '#10B981',
+    fontWeight: '700',
+  },
+  removeModelBtn: {
+    padding: 6,
+    backgroundColor: '#fef2f2',
+    borderRadius: 8,
+  },
+  removeModelPlaceholder: {
+    width: 30,
+  },
 
-  addSlotButton: { flexDirection: 'row', backgroundColor: '#334155', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10, shadowColor: '#334155', shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 3 } },
-  addSlotText: { color: '#fff', fontWeight: '700', marginLeft: 8, fontSize: 15 },
-  
-  footerContainer: { backgroundColor: '#fff', padding: 16, borderTopWidth: 1, borderTopColor: '#e2e8f0', flexDirection: 'row', gap: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: -2 }, elevation: 10 },
-  footerClearBtn: { padding: 16, backgroundColor: '#f1f5f9', borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
-  footerSubmitBtn: { flex: 1, backgroundColor: '#2563eb', borderRadius: 12, alignItems: 'center', justifyContent: 'center', shadowColor: '#2563eb', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-  footerSubmitText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
+  modelTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  modelTimeButton: {
+    backgroundColor: '#f9fafb',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    alignItems: 'center',
+    minWidth: 90,
+  },
+  modelTimeButtonText: {
+    fontSize: 10,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  timeSeparator: {
+    marginHorizontal: 8,
+    fontSize: 14,
+    color: '#6b7280',
+    fontWeight: 'bold',
+  },
 
+  addModelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    backgroundColor: '#f8fafc',
+  },
+  addModelText: {
+    color: '#2563eb',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+
+  dropdownContainer: {
+    position: 'absolute',
+    top: 45,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    zIndex: 99999,
+    elevation: 99999,
+    maxHeight: 180,
+  },
+  dropdownWrapper: {
+    flexDirection: 'row',
+  },
+  dropdownScroll: {
+    flex: 1,
+  },
+  scrollControls: {
+    width: 40,
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: '#f3f4f6',
+    backgroundColor: '#fafafa',
+  },
+  arrowButton: {
+    padding: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  dropdownItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  dropdownText: {
+    fontSize: 12,
+    color: '#374151',
+  },
+
+  remarksContainer: {
+    marginTop: 8,
+    position: 'relative',
+  },
+  remarksInput: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    padding: 12,
+    height: 80,
+    textAlignVertical: 'top',
+    fontSize: 14,
+    color: '#334155',
+  },
+
+  addSlotButton: {
+    flexDirection: 'row',
+    backgroundColor: '#334155',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#334155',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  addSlotText: {
+    color: '#fff',
+    fontWeight: '700',
+    marginLeft: 8,
+    fontSize: 15,
+  },
+
+  footerContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    flexDirection: 'row',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 10,
+  },
+  footerClearBtn: {
+    padding: 16,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  footerSubmitBtn: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  footerSubmitText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
   loadingOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'center', alignItems: 'center' },
   loadingBox: { backgroundColor: '#1E1E2E', padding: 30, borderRadius: 20, alignItems: 'center', width: '80%', shadowColor: '#7c3aed', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
   animationContainer: { width: 80, height: 80, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },

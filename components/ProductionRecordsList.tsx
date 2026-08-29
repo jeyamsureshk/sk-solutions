@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { ProductionRecord } from '@/types/database';
 import ProductionDayCard from './ProductionDayCard';
+import ProductionDayCard2 from './ProductionDayCard2'; // Make sure this file exists
 
 interface ProductionRecordsListProps {
   records: ProductionRecord[];
@@ -16,6 +17,7 @@ interface ProductionRecordsListProps {
   onEdit: (record: ProductionRecord) => void;
   onDelete: (id: string) => void;
   onRefresh: () => void;
+  cardStyle?: 'style1' | 'style2'; // Added cardStyle prop
 }
 
 interface GroupedRecord {
@@ -33,6 +35,7 @@ export default function ProductionRecordsList({
   onEdit,
   onDelete,
   onRefresh,
+  cardStyle = 'style1', // Default to style1
 }: ProductionRecordsListProps) {
   const [page, setPage] = useState(1);
 
@@ -82,16 +85,31 @@ export default function ProductionRecordsList({
   };
 
   const renderItem: ListRenderItem<GroupedRecord> = useCallback(
-    ({ item }) => (
-      <ProductionDayCard
-        team={item.team}
-        date={item.date}
-        records={item.records}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    ),
-    [onEdit, onDelete]
+    ({ item }) => {
+      // Conditionally render based on the selected card style
+      if (cardStyle === 'style2') {
+        return (
+          <ProductionDayCard2
+            team={item.team}
+            date={item.date}
+            records={item.records}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        );
+      }
+
+      return (
+        <ProductionDayCard
+          team={item.team}
+          date={item.date}
+          records={item.records}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      );
+    },
+    [onEdit, onDelete, cardStyle] // Re-render if cardStyle changes
   );
 
   if (!loading && records.length === 0) {
@@ -125,6 +143,7 @@ export default function ProductionRecordsList({
 const styles = StyleSheet.create({
   listContainer: {
     padding: 16,
+    paddingBottom: 80, // Added padding to clear any bottom tabs/buttons
   },
   emptyContainer: {
     flex: 1,
@@ -143,4 +162,3 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
   },
 });
-

@@ -489,7 +489,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
               </View>
               <View>
                   <Text style={styles.modalText}>Edit Entry</Text>
-                  <Text style={styles.modalSubText}>Modify quantity or remarks h</Text>
+                  <Text style={styles.modalSubText}>Modify quantity or remarks</Text>
               </View>
             </TouchableOpacity>
             
@@ -499,7 +499,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
               </View>
               <View>
                   <Text style={[styles.modalText, { color: THEME.error }]}>Delete Entry</Text>
-                  <Text style={styles.modalSubText}>This action cannot be undone h</Text>
+                  <Text style={styles.modalSubText}>This action cannot be undone</Text>
               </View>
             </TouchableOpacity>
           </View>

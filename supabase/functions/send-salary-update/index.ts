@@ -1,11 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-// Initialize the Resend API (You'll set this secret in the next step)
-const RESEND_API_KEY = Deno.env.get('re_34yMj7kq_6aph1rEsnooC2JySQnZLR9xn')
+// 1. Ask for the variable name, not the key itself
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 
 serve(async (req) => {
   try {
-    const { to, name, gross, net, otHours } = await req.json()
+    const payload = await req.json()
+    
+    // 2. Supabase Webhooks send the database row inside the "record" object
+    const updatedRow = payload.record 
+
+    // Extract your database columns (Make sure these match your actual column names in Supabase)
+    const to = updatedRow.email
+    const name = updatedRow.employee_name
+    const gross = updatedRow.gross_salary
+    const net = updatedRow.net_salary
+    const otHours = updatedRow.ot_hours || 0
+
+    // Prevent sending if missing an email
+    if (!to) {
+       return new Response("No email address provided", { status: 400 })
+    }
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -14,7 +29,7 @@ serve(async (req) => {
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: 'Ravel Payroll <payroll@sktech.in>', // Replace with your verified domain
+        from: 'Ravel Payroll <payroll@sktech.in>', // Note: This domain MUST be verified in Resend
         to: [to],
         subject: `Salary Structure Updated - ${name}`,
         html: `
@@ -40,7 +55,7 @@ serve(async (req) => {
     const result = await response.json()
     return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } })
 
-  } catch (error) {
+  } catch (error: any) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500 })
   }
 })

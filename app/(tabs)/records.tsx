@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,13 +14,14 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for local storage
 import ProductionRecordsList from '@/components/ProductionRecordsList';
 import ProductionForm from '@/components/ProductionForm';
 import { useProductionRecords } from '@/hooks/useProductionRecords';
 import { ProductionRecord, ProductionRecordInsert } from '@/types/database';
 import { Filters } from '@/types/summary';
 import { useTeams } from '@/hooks/useTeams';
-import { X } from 'lucide-react-native';
+import { X, LayoutTemplate } from 'lucide-react-native'; // Added LayoutTemplate icon
 
 export default function RecordsScreen() {
   const [showFilters, setShowFilters] = useState(false);
@@ -33,6 +34,35 @@ export default function RecordsScreen() {
   const { teams } = useTeams();
   const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+
+  // --- CARD STYLE TOGGLE STATE ---
+  const [cardStyle, setCardStyle] = useState<'style1' | 'style2'>('style1');
+
+  // Load saved style preference when screen opens
+  useEffect(() => {
+    const loadPreferredStyle = async () => {
+      try {
+        const savedStyle = await AsyncStorage.getItem('@preferred_card_style');
+        if (savedStyle === 'style1' || savedStyle === 'style2') {
+          setCardStyle(savedStyle);
+        }
+      } catch (error) {
+        console.error('Error loading card style preference:', error);
+      }
+    };
+    loadPreferredStyle();
+  }, []);
+
+  // Toggle style and save to local storage
+  const toggleCardStyle = async () => {
+    const newStyle = cardStyle === 'style1' ? 'style2' : 'style1';
+    setCardStyle(newStyle);
+    try {
+      await AsyncStorage.setItem('@preferred_card_style', newStyle);
+    } catch (error) {
+      console.error('Error saving card style preference:', error);
+    }
+  };
 
   const handleEdit = (record: ProductionRecord) => {
     setEditingRecord(record);
@@ -107,13 +137,27 @@ export default function RecordsScreen() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>Production Records</Text>
-          <TouchableOpacity
-            style={styles.filterButton}
-            onPress={() => setShowFilters(!showFilters)}
-          >
-            <Text style={styles.filterButtonText}>Filters</Text>
-            {hasActiveFilters && <View style={styles.filterIndicator} />}
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {/* --- TOGGLE STYLE BUTTON --- */}
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              onPress={toggleCardStyle}
+            >
+              <LayoutTemplate size={16} color="#4b5563" />
+              <Text style={styles.actionButtonText}>
+                {cardStyle === 'style1' ? 'Style 1' : 'Style 2'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Filters Button */}
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Text style={styles.actionButtonText}>Filters</Text>
+              {hasActiveFilters && <View style={styles.filterIndicator} />}
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={styles.headerSubtitle}>
           {records.length} record{records.length !== 1 ? 's' : ''}
@@ -243,12 +287,14 @@ export default function RecordsScreen() {
       )}
 
       {/* Records list */}
-          <ProductionRecordsList
+      {/* --- PASS THE CARD STYLE AS A PROP TO YOUR LIST --- */}
+      <ProductionRecordsList
         records={records}
         loading={loading}
         onEdit={handleEdit}
         onDelete={handleDelete}
         onRefresh={fetchRecords}
+        cardStyle={cardStyle} 
       />
 
       {/* Edit Record Modal with KeyboardAvoidingView */}
@@ -323,6 +369,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e5e7eb',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 6,
+  },
+  actionButtonText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: '#f3f4f6',
@@ -347,19 +412,6 @@ const styles = StyleSheet.create({
   modalContent: {
     flex: 1,
     padding: 16,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#e5e7eb',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  filterButtonText: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '600',
   },
   filtersContainer: {
     backgroundColor: '#ffffff',
@@ -420,4 +472,3 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 });
-
