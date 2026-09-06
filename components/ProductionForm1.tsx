@@ -32,30 +32,21 @@ interface ModelEntry {
   part_number?: string;
   uph?: number | null;
   target?: string;
-  start_time?: string; 
-  end_time?: string;   
-  stages?: number | null;
+  start_time?: string; // Added
+  end_time?: string;   // Added
 }
-
-// HELPER: Calculate Effective UPH based on Manpower and Stages
-const getEffectiveUph = (uph: number | null | undefined, stages: number | null | undefined, manpower: string | number) => {
-  const u = Number(uph || 0);
-  const s = Number(stages || 1) || 1;
-  const mp = Number(manpower || 1) || 1;
-  if (u <= 0) return 0;
-  return stages && stages > 0 ? Math.floor(u / s) * mp : u;
-};
 
 // HELPER: Calculates default start/end times based on the hour selected
 const getDefaultTimes = (hourStr: string) => {
   const hourNum = parseFloat(hourStr);
   if (isNaN(hourNum)) return { start: '', end: '' };
   
+  // Special case matching your production cards
   if (hourNum === 9 || hourNum === 9.0) return { start: '08:30', end: '09:00' };
   
   const formatTimeFromHour = (hNum: number) => {
     let totalMins = Math.round(hNum * 60);
-    if (totalMins < 0) totalMins += 24 * 60; 
+    if (totalMins < 0) totalMins += 24 * 60; // Handle midnight wrap-around
     const finalH = Math.floor(totalMins / 60) % 24;
     const finalM = totalMins % 60;
     return `${finalH.toString().padStart(2, '0')}:${finalM.toString().padStart(2, '0')}`;
@@ -67,21 +58,26 @@ const getDefaultTimes = (hourStr: string) => {
   };
 };
 
+// Converts HH:mm + minutes into HH:mm, including midnight wrap-around.
 const addMinutesToTime = (time: string, minutes: number) => {
   if (!time || !Number.isFinite(minutes)) return time;
 
   const [hours, mins] = time.split(':').map(Number);
   if (Number.isNaN(hours) || Number.isNaN(mins)) return time;
 
-  const totalMinutes = (hours * 60 + mins + Math.max(0, Math.round(minutes))) % (24 * 60);
+  const totalMinutes = (hours * 60 + mins + Math.max(0, Math.ceil(minutes))) % (24 * 60);
   const finalHours = Math.floor(totalMinutes / 60);
   const finalMinutes = totalMinutes % 60;
 
   return `${finalHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
 };
 
-// Automatic model timing using Effective UPH
-const recalculateModelTimes = (modelList: ModelEntry[], currentManpower: string | number) => {
+// Automatic model timing:
+// 1. Start from the model's start time.
+// 2. Use actual quantity time when actual quantity is entered.
+// 3. Otherwise use target/estimated time.
+// 4. The next model starts exactly when the previous model ends.
+const recalculateModelTimes = (modelList: ModelEntry[]) => {
   const updated = [...modelList];
 
   for (let index = 0; index < updated.length; index++) {
@@ -94,13 +90,14 @@ const recalculateModelTimes = (modelList: ModelEntry[], currentManpower: string 
 
     const targetQty = Number(current.target || 0);
     const actualQty = Number(current.quantity || 0);
-    const effectiveUph = getEffectiveUph(current.uph, current.stages, currentManpower);
+    const uph = Number(current.uph || 0);
 
+    // Actual quantity takes priority over target time once entered.
     const durationMinutes =
-      effectiveUph > 0 && actualQty > 0
-        ? (actualQty / effectiveUph) * 60
-        : effectiveUph > 0 && targetQty > 0
-          ? (targetQty / effectiveUph) * 60
+      uph > 0 && actualQty > 0
+        ? Math.ceil((actualQty / uph) * 60)
+        : uph > 0 && targetQty > 0
+          ? Math.ceil((targetQty / uph) * 60)
           : 0;
 
     updated[index] = {
@@ -116,32 +113,6 @@ const recalculateModelTimes = (modelList: ModelEntry[], currentManpower: string 
   return updated;
 };
 
-// Gets suggested target based on remaining minutes in the hour
-const getSuggestedTarget = (
-  currentIndex: number,
-  currentUph: number | null,
-  currentStages: number | null,
-  mp: string | number,
-  currentModels: ModelEntry[]
-) => {
-  const effectiveUph = getEffectiveUph(currentUph, currentStages, mp);
-  if (effectiveUph <= 0) return '';
-
-  let usedMinutes = 0;
-  for (let i = 0; i < currentIndex; i++) {
-    const prev = currentModels[i];
-    const prevEffUph = getEffectiveUph(prev.uph, prev.stages, mp);
-    if (prevEffUph > 0 && prev.target && Number(prev.target) > 0) {
-      usedMinutes += (Number(prev.target) / prevEffUph) * 60;
-    }
-  }
-
-  const remainingMinutes = Math.max(0, 60 - usedMinutes);
-  const suggestedQty = Math.round((remainingMinutes / 60) * effectiveUph);
-  
-  return suggestedQty > 0 ? suggestedQty.toString() : '';
-};
-
 export default function ProductionForm({
   onSubmit,
   onCancel,
@@ -153,6 +124,7 @@ export default function ProductionForm({
   const currentHour = new Date().getHours();
   const defaultInitialTimes = getDefaultTimes(currentHour.toString());
 
+  // Form States
   const [date, setDate] = useState(today);
   const [hour, setHour] = useState(currentHour.toString());
   const [models, setModels] = useState<ModelEntry[]>([{ 
@@ -162,8 +134,7 @@ export default function ProductionForm({
     uph: null, 
     target: '', 
     start_time: defaultInitialTimes.start, 
-    end_time: defaultInitialTimes.end,
-    stages: null
+    end_time: defaultInitialTimes.end 
   }]);
   const [targetUnits, setTargetUnits] = useState('');
   const [operatorId, setOperatorId] = useState('');
@@ -172,12 +143,16 @@ export default function ProductionForm({
   const [remarks, setRemarks] = useState('');
   const [manpower, setManpower] = useState('');
   
+  // Downtime and Defect States
   const [planDt, setPlanDt] = useState('');
   const [unplanDt, setUnplanDt] = useState('');
   const [defectQty, setDefectQty] = useState('');
 
+  // UI States
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  
+  // Model Time Picker State (Added)
   const [modelTimePickerState, setModelTimePickerState] = useState<{ index: number; field: 'start_time' | 'end_time' } | null>(null);
 
   const { items } = useItems();
@@ -233,13 +208,16 @@ export default function ProductionForm({
   "1 MP Pallet Movement 30 Mins",
   ];
 
+  // Auto-calculate total Target Units based on the sum of all model 'target' inputs
  useEffect(() => {
   const totalTarget = models.reduce(
     (sum, item) => sum + (parseInt(item.target || '0', 10) || 0),
     0
   );
+
   setTargetUnits(totalTarget.toString());
   }, [models]);
+
 
   useEffect(() => {
   calculateRemarkValues();
@@ -257,23 +235,41 @@ export default function ProductionForm({
 
   lines.forEach(line => {
     const lower = line.toLowerCase();
-    const mins = Number(line.match(/\d+/)?.[0]) || 0;
 
+    // extract first number
+    const mins =
+      Number(line.match(/\d+/)?.[0]) || 0;
+
+    // Planned DT
     if (
-      lower.includes("tea break") || lower.includes("lunch break") || lower.includes("change over") ||
-      lower.includes("changeover") || lower.includes("meeting") || lower.includes("training")
+      lower.includes("tea break") ||
+      lower.includes("lunch break") ||
+      lower.includes("change over") ||
+      lower.includes("changeover") ||
+      lower.includes("meeting") ||
+      lower.includes("training")
     ) {
       planned += mins;
     }
+
+    // Unplanned DT
     else if (
-      lower.includes("fault") || lower.includes("machine breakdown") || lower.includes("input delay") ||
-      lower.includes("kitting delay") || lower.includes("material") || lower.includes("power failure") ||
+      lower.includes("fault") ||
+      lower.includes("machine breakdown") ||
+      lower.includes("input delay") ||
+      lower.includes("kitting delay") ||
+      lower.includes("material") ||
+      lower.includes("power failure") ||
       lower.includes("waiting")
     ) {
       unplanned += mins;
     }
 
-    if (lower.includes("nos") || lower.includes("pcs")) {
+    // Defect Qty
+    if (
+      lower.includes("nos") ||
+      lower.includes("pcs")
+    ) {
       const qty = Number(line.match(/\d+/)?.[0]) || 0;
       defects += qty;
     }
@@ -283,10 +279,11 @@ export default function ProductionForm({
   setUnplanDt(unplanned ? unplanned.toString() : "");
   setDefectQty(defects ? defects.toString() : "");
   };
-
+  // LOGIC: DATA FETCHING & INITIALIZATION
   useEffect(() => {
     const initializeForm = async () => {
       if (initialData) {
+        // CASE: EDITING - Populate from initialData
         setDate(initialData.date || today);
         setHour(initialData.hour?.toString() || currentHour.toString());
         setTargetUnits(initialData.target_units?.toString() || '');
@@ -296,10 +293,12 @@ export default function ProductionForm({
         setOperatorName(initialData.operator_name || '');
         setTeam(initialData.team || '');
         
+        // Populate new fields
         setPlanDt(initialData.plan_dt?.toString() || '');
         setUnplanDt(initialData.unplan_dt?.toString() || '');
         setDefectQty(initialData.defect_qty?.toString() || '');
 
+        // Retrieve JSON items array correctly
         if (initialData.item && Array.isArray(initialData.item)) {
           const mappedItems = initialData.item.map((item: any) => ({
             model: item.model || '',
@@ -307,13 +306,13 @@ export default function ProductionForm({
             part_number: item.part_number || '',
             uph: item.uph || null,
             target: item.target?.toString() || '',
-            start_time: item.start_time || '', 
-            end_time: item.end_time || '',     
-            stages: item.stages || null
+            start_time: item.start_time || '', // Load start time
+            end_time: item.end_time || '',     // Load end time
           }));
           setModels(mappedItems);
         }
       } else {
+        // CASE: NEW RECORD - Fetch logged-in user profile
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) return;
@@ -342,35 +341,9 @@ export default function ProductionForm({
         }
       }
     };
+
     initializeForm();
   }, [initialData]); 
-
-  // Dynamically update existing model targets when Manpower changes to retain partial hour ratios
-  const handleManpowerChange = (text: string) => {
-    setManpower(text);
-    const newManpower = parseInt(text, 10) || 0;
-    const oldManpower = parseInt(manpower, 10) || 1;
-
-    if (newManpower >= 0) {
-      setModels((currentModels) => {
-        const updated = currentModels.map((item) => {
-          if (item.uph && item.stages && item.target) {
-            const oldEffectiveUph = getEffectiveUph(item.uph, item.stages, oldManpower);
-            const newEffectiveUph = getEffectiveUph(item.uph, item.stages, newManpower);
-            
-            if (oldEffectiveUph > 0) {
-              const oldTargetQty = parseInt(item.target, 10);
-              const allocatedMinutes = (oldTargetQty / oldEffectiveUph) * 60;
-              const newTargetQty = Math.round((allocatedMinutes / 60) * newEffectiveUph);
-              return { ...item, target: newTargetQty.toString() };
-            }
-          }
-          return item;
-        });
-        return recalculateModelTimes(updated, newManpower);
-      });
-    }
-  };
 
   const onTimeChange = (_event: any, selectedTime?: Date) => {
     setShowTimePicker(false);
@@ -380,6 +353,7 @@ export default function ProductionForm({
       const formatted = m >= 30 ? `${h}.5` : `${h}`;
       setHour(formatted);
 
+      // Auto-update times for the first entry if it's a new clean record
       if (!initialData && models.length === 1 && !models[0].model) {
         const defaultTimes = getDefaultTimes(formatted);
         setModels([{ ...models[0], start_time: defaultTimes.start, end_time: defaultTimes.end }]);
@@ -387,9 +361,10 @@ export default function ProductionForm({
     }
   };
 
+  // Added: Model Time Picker Handler
   const onModelTimeChange = (_event: any, selectedTime?: Date) => {
     const currentState = modelTimePickerState;
-    setModelTimePickerState(null); 
+    setModelTimePickerState(null); // Close the picker
     
     if (selectedTime && currentState) {
       const h = selectedTime.getHours().toString().padStart(2, '0');
@@ -401,65 +376,108 @@ export default function ProductionForm({
         ...newModels[currentState.index],
         [currentState.field]: formattedTime,
       };
-      setModels(recalculateModelTimes(newModels, manpower));
+      setModels(recalculateModelTimes(newModels));
     }
   };
 
-  const getModelFinishTime = (target: string | undefined, uph: number | null, stages: number | null) => {
-    const targetQty = Number(target || 0);
-    const effectiveUph = getEffectiveUph(uph, stages, manpower);
+const getModelFinishTime = (target?: string, uph?: number | null) => {
+  const targetQty = Number(target || 0);
+  const uphValue = Math.floor(Number(uph || 0));
 
-    if (targetQty <= 0 || effectiveUph <= 0) return '';
+  if (targetQty <= 0 || uphValue <= 0) {
+    return '';
+  }
 
-    const exactMinutes = (targetQty / effectiveUph) * 60;
-    const totalMinutes = Math.round(exactMinutes * 10) / 10;
+  const totalMinutes = Math.ceil((targetQty / uphValue) * 60);
 
-    if (totalMinutes < 60) return `${totalMinutes} min`;
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
 
-    const hrs = Math.floor(totalMinutes / 60);
-    const mins = Number((totalMinutes - hrs * 60).toFixed(1));
-    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
-  };
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
 
-  const getTotalEstimatedTargetTime = () => {
-    const totalExactMinutes = models.reduce((sum, item) => {
-      const target = Number(item.target || 0);
-      const effectiveUph = getEffectiveUph(item.uph, item.stages, manpower);
+  if (mins === 0) {
+    return `${hrs} hr`;
+  }
 
-      if (target > 0 && effectiveUph > 0) {
-        return sum + ((target / effectiveUph) * 60);
-      }
-      return sum;
-    }, 0);
+  return `${hrs} hr ${mins} min`;
+};
 
-    if (totalExactMinutes === 0) return '';
+const getSuggestedTarget = (
+  currentIndex: number,
+  currentUph?: number | null
+) => {
+  if (!currentUph || currentUph <= 0) return '';
 
-    const totalMinutes = Math.round(totalExactMinutes * 10) / 10;
-    
-    if (totalMinutes < 60) return `${totalMinutes} min`;
+  const TOTAL_MINUTES = 60;
+  let usedMinutes = 0;
 
-    const hrs = Math.floor(totalMinutes / 60);
-    const mins = Number((totalMinutes - hrs * 60).toFixed(1));
-    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
-  };
+  // Calculate minutes already used by previous models
+  for (let i = 0; i < currentIndex; i++) {
+    const prev = models[i];
 
-  const getTotalActualEstimatedTime = () => {
-    const totalExactMinutes = models.reduce((sum, item) => {
-      const effectiveUph = getEffectiveUph(item.uph, item.stages, manpower);
-      if (effectiveUph <= 0 || item.quantity <= 0) return sum;
-      return sum + ((item.quantity / effectiveUph) * 60);
-    }, 0);
+    if (
+      prev.uph &&
+      prev.uph > 0 &&
+      prev.target &&
+      Number(prev.target) > 0
+    ) {
+      usedMinutes += (Number(prev.target) / prev.uph) * 60;
+    }
+  }
 
-    if (totalExactMinutes === 0) return '0 min';
+  const remainingMinutes = Math.max(0, TOTAL_MINUTES - usedMinutes);
 
-    const totalMinutes = Math.round(totalExactMinutes * 10) / 10;
-    
-    if (totalMinutes < 60) return `${totalMinutes} min`;
+  // Suggested quantity for remaining time
+  const suggestedQty = Math.floor((remainingMinutes / 60) * currentUph);
 
-    const hrs = Math.floor(totalMinutes / 60);
-    const mins = Number((totalMinutes - hrs * 60).toFixed(1));
-    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
-  };
+  return suggestedQty.toString();
+};
+
+const getTotalEstimatedTargetTime = () => {
+  const totalMinutes = models.reduce((sum, item) => {
+    const target = Number(item.target || 0);
+    const uph = Number(item.uph || 0);
+
+    if (target > 0 && uph > 0) {
+      return sum + Math.ceil((target / uph) * 60);
+    }
+
+    return sum;
+  }, 0);
+
+  if (totalMinutes === 0) return '';
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  return mins === 0
+    ? `${hrs} hr`
+    : `${hrs} hr ${mins} min`;
+};
+
+const getTotalActualEstimatedTime = () => {
+  const totalMinutes = models.reduce((sum, item) => {
+    if (!item.uph || item.uph <= 0 || item.quantity <= 0) return sum;
+
+    return sum + Math.ceil((item.quantity / item.uph) * 60);
+  }, 0);
+
+  if (totalMinutes <= 0) return '0 min';
+
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  if (hrs === 0) return `${mins} min`;
+  if (mins === 0) return `${hrs} hr`;
+
+  return `${hrs} hr ${mins} min`;
+};
 
   const handleSubmit = async () => {
     const hourNum = parseFloat(hour);
@@ -491,6 +509,7 @@ export default function ProductionForm({
       return;
     }
 
+    // Prepare payload, parsing new fields safely
     const formData: ProductionRecordInsert = {
       date,
       hour: hourNum,
@@ -500,31 +519,36 @@ export default function ProductionForm({
       operator_name: operatorName.trim(),
       team: team.trim(),
       remarks: remarks.trim(),
-      item: models
-        .filter(m => m.model.trim() !== '')
-        .map(({ model, quantity, part_number, uph, target, start_time, end_time, stages }) => {
-          const targetQty = target ? parseInt(target, 10) : 0;
-          const effectiveUph = getEffectiveUph(uph, stages, manpowerNum);
+item: models
+  .filter(m => m.model.trim() !== '')
+  .map(({ model, quantity, part_number, uph, target, start_time, end_time }) => {
+    const targetQty = target ? parseInt(target, 10) : 0;
 
-          const targetEstimatedMinutes = effectiveUph > 0 && targetQty > 0
-            ? Math.round(((targetQty / effectiveUph) * 60) * 10) / 10 : null;
+    const targetEstimatedMinutes =
+      uph && targetQty > 0
+        ? Math.ceil((targetQty / uph) * 60)
+        : null;
 
-          const actualEstimatedMinutes = effectiveUph > 0 && quantity > 0
-            ? Math.round(((quantity / effectiveUph) * 60) * 10) / 10 : null;
+    const actualEstimatedMinutes =
+      uph && quantity > 0
+        ? Math.ceil((quantity / uph) * 60)
+        : null;
 
-          return {
-            model,
-            quantity,
-            part_number: part_number || null,
-            uph: uph ?? null,
-            target: target ? parseInt(target, 10) : null,
-            start_time: start_time || null, 
-            end_time: end_time || null,     
-            stages: stages || null,
-            target_estimated_time: targetEstimatedMinutes,
-            actual_estimated_time: actualEstimatedMinutes,
-          };
-        }),
+    return {
+      model,
+      quantity,
+      part_number: part_number || null,
+      uph: uph ?? null,
+      target: target ? parseInt(target, 10) : null,
+      start_time: start_time || null, // Saved
+      end_time: end_time || null,     // Saved
+
+      // Estimated times (minutes)
+      target_estimated_time: targetEstimatedMinutes,
+      actual_estimated_time: actualEstimatedMinutes,
+    };
+  }),
+
       manpower: manpowerNum,
       plan_dt: planDt ? parseFloat(planDt) : null,
       unplan_dt: unplanDt ? parseFloat(unplanDt) : null,
@@ -542,7 +566,7 @@ export default function ProductionForm({
     setDate(today);
     setHour(currentHour.toString());
     const defTimes = getDefaultTimes(currentHour.toString());
-    setModels([{ model: '', quantity: 0, part_number: '', uph: null, target: '', start_time: defTimes.start, end_time: defTimes.end, stages: null }]);
+    setModels([{ model: '', quantity: 0, part_number: '', uph: null, target: '', start_time: defTimes.start, end_time: defTimes.end }]);
     setTargetUnits('');
     setRemarks('');
     setManpower('');
@@ -612,6 +636,7 @@ export default function ProductionForm({
           const record = Array.isArray(result.data) ? result.data[0] : result.data;
           const parsedCycles = parseFloat((record as any)?.cycles_per_hour);
 
+          // Calculate stage length for manpower
           if (record.stages && Array.isArray(record.stages)) {
             fetchedManpower = record.stages.length;
           }
@@ -623,36 +648,34 @@ export default function ProductionForm({
         }
       }
 
+      // Automatically update the global manpower input if we successfully grabbed stages
       if (fetchedManpower !== null && fetchedManpower > 0) {
         setManpower(fetchedManpower.toString());
       }
 
-      setModels((currentModels) => {
-        const updated = [...currentModels];
-        const stagesCount = fetchedManpower && fetchedManpower > 0 ? fetchedManpower : 1;
-        const currentManpower = fetchedManpower !== null && fetchedManpower > 0 ? fetchedManpower.toString() : (manpower || "1");
+     setModels((currentModels) => {
+  const updated = [...currentModels];
 
-        let calcTarget = updated[index].target;
-        if (!calcTarget) {
-          calcTarget = getSuggestedTarget(index, uphValue, stagesCount, currentManpower, updated);
-        }
+  const suggestedTarget =
+    uphValue && !updated[index].target
+      ? getSuggestedTarget(index, uphValue)
+      : updated[index].target;
 
-        updated[index] = {
-          ...updated[index],
-          part_number: trimmedPartNumber.toUpperCase(),
-          uph: uphValue,
-          stages: stagesCount,
-          target: calcTarget,
-        };
+  updated[index] = {
+    ...updated[index],
+    part_number: trimmedPartNumber.toUpperCase(),
+    uph: uphValue,
+    target: suggestedTarget,
+  };
 
-        return recalculateModelTimes(updated, currentManpower);
-      });
+  return recalculateModelTimes(updated);
+});
     } catch (error) {
       console.error('Failed to fetch UPH:', error);
       setModels((currentModels) =>
         currentModels.map((item, itemIndex) =>
           itemIndex === index
-            ? { ...item, part_number: trimmedPartNumber.toUpperCase(), uph: null, stages: null }
+            ? { ...item, part_number: trimmedPartNumber.toUpperCase(), uph: null }
             : item
         )
       );
@@ -689,22 +712,25 @@ export default function ProductionForm({
             </View>
           </View>
 
-          {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />}
+          {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onValueChange={onDateChange} onDismiss={() => setShowDatePicker(false)} />}
           {showTimePicker && (
             <DateTimePicker
               value={new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)}
               mode="time"
               display="default"
-              onChange={onTimeChange}
+              onValueChange={onTimeChange}
+              onDismiss={() => setShowTimePicker(false)}
             />
           )}
 
+          {/* New Picker for Model Start/End Times */}
           {modelTimePickerState && (
             <DateTimePicker
               value={new Date()}
               mode="time"
               display="default"
-              onChange={onModelTimeChange}
+              onValueChange={onModelTimeChange}
+              onDismiss={() => setModelTimePickerState(null)}
             />
           )}
 
@@ -758,81 +784,71 @@ export default function ProductionForm({
                     placeholder="Model name"
                   />
 
+                  {/* Target Input */}
                 <View style={styles.targetContainer}>
-                  <TextInput
-                    style={[styles.input, styles.targetInput]}
-                    value={modelItem.target}
-                    onChangeText={(text) => {
-                      const newModels = [...models];
-                      newModels[index] = {
-                        ...newModels[index],
-                        target: text,
-                      };
-                      
-                      for (let i = index + 1; i < newModels.length; i++) {
-                        if (newModels[i].uph) {
-                          newModels[i].target = getSuggestedTarget(
-                            i,
-                            newModels[i].uph,
-                            newModels[i].stages,
-                            manpower,
-                            newModels
-                          );
-                        }
-                      }
+  <TextInput
+    style={[styles.input, styles.targetInput]}
+    value={modelItem.target}
+    onChangeText={(text) => {
+      const newModels = [...models];
+      newModels[index] = {
+        ...newModels[index],
+        target: text,
+      };
+      setModels(recalculateModelTimes(newModels));
+    }}
+    placeholder="Target"
+    keyboardType="number-pad"
+  />
 
-                      setModels(recalculateModelTimes(newModels, manpower));
-                    }}
-                    placeholder="Target"
-                    keyboardType="number-pad"
-                  />
+  {modelItem.target && modelItem.uph ? (
+    <Text style={styles.finishTimeText}>
+      {getModelFinishTime(modelItem.target, modelItem.uph)}
+    </Text>
+  ) : null}
+</View>
+                  {/* Actual (Quantity) Input */}
+{/* Actual (Quantity) Input */}
+<View style={styles.quantityContainer}>
+  <TextInput
+    style={[styles.input, styles.quantityInput]}
+    value={
+      modelItem.quantity !== null &&
+      modelItem.quantity !== undefined &&
+      modelItem.quantity !== 0
+        ? modelItem.quantity.toString()
+        : ''
+    }
+    onChangeText={(text) => {
+      const newModels = [...models];
+      newModels[index] = {
+        ...newModels[index],
+        quantity: parseInt(text) || 0,
+      };
+      setModels(recalculateModelTimes(newModels));
+    }}
+    placeholder="Actual"
+    keyboardType="number-pad"
+  />
 
-                  {modelItem.target && modelItem.uph ? (
-                    <Text style={styles.finishTimeText}>
-                      {getModelFinishTime(modelItem.target, modelItem.uph, modelItem.stages)}
-                    </Text>
-                  ) : null}
-                </View>
+  {modelItem.quantity > 0 && modelItem.uph ? (
+    <Text style={styles.actualTimeText}>
+      {getModelFinishTime(modelItem.quantity.toString(), modelItem.uph)}
+    </Text>
+  ) : null}
+</View>
 
-                <View style={styles.quantityContainer}>
-                  <TextInput
-                    style={[styles.input, styles.quantityInput]}
-                    value={
-                      modelItem.quantity !== null &&
-                      modelItem.quantity !== undefined &&
-                      modelItem.quantity !== 0
-                        ? modelItem.quantity.toString()
-                        : ''
-                    }
-                    onChangeText={(text) => {
-                      const newModels = [...models];
-                      newModels[index] = {
-                        ...newModels[index],
-                        quantity: parseInt(text) || 0,
-                      };
-                      setModels(recalculateModelTimes(newModels, manpower));
-                    }}
-                    placeholder="Actual"
-                    keyboardType="number-pad"
-                  />
-
-                  {modelItem.quantity > 0 && modelItem.uph ? (
-                    <Text style={styles.actualTimeText}>
-                      {getModelFinishTime(modelItem.quantity.toString(), modelItem.uph, modelItem.stages)}
-                    </Text>
-                  ) : null}
-                </View>
-
-                {models.length > 1 && (
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => setModels(models.filter((_, i) => i !== index))}
-                  >
-                    <Trash2 size={16} color="#ffffff" />
-                  </TouchableOpacity>
+{models.length > 1 && (
+  <TouchableOpacity
+    style={styles.removeButton}
+    onPress={() => setModels(models.filter((_, i) => i !== index))}
+  >
+    <Trash2 size={16} color="#ffffff" />
+  </TouchableOpacity>
                   )}
                 </View>
                 
+                {/* Time Picker Row for Individual Model */}
                 <View style={styles.modelTimeRow}>
                   <TouchableOpacity 
                     style={styles.modelTimeButton} 
@@ -899,8 +915,7 @@ export default function ProductionForm({
                     uph: null, 
                     target: '', 
                     start_time: prevEndTime || defTimes.start,
-                    end_time: prevEndTime || defTimes.start,
-                    stages: null
+                    end_time: prevEndTime || defTimes.start
                   }
                 ]);
               }}
@@ -908,16 +923,10 @@ export default function ProductionForm({
               <Text style={styles.addButtonText}>Add Model</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.row}>
+<View style={styles.row}>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Manpower</Text>
-              <TextInput 
-                style={styles.input} 
-                value={manpower} 
-                onChangeText={handleManpowerChange} 
-                keyboardType="number-pad" 
-                placeholder="Manpower"
-              />
+              <TextInput style={styles.input} value={manpower} onChangeText={setManpower} keyboardType="number-pad" placeholder="Manpower"/>
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Target Units</Text>
@@ -927,11 +936,11 @@ export default function ProductionForm({
                   {
                     backgroundColor: '#fff',
                     height: 43,
-                    flexDirection: 'row', 
+                    flexDirection: 'row', // Places items side-by-side
                     justifyContent: 'center',
-                    alignItems: 'center', 
+                    alignItems: 'center', // Centers them vertically
                     paddingVertical: 4,
-                    gap: 6, 
+                    gap: 6, // Adds space between the number and time
                   },
                 ]}
               >
@@ -949,7 +958,7 @@ export default function ProductionForm({
                   style={{
                     fontSize: 10,
                     fontWeight: '700',
-                    color: '#2563eb', 
+                    color: '#2563eb', // Blue
                   }}
                 >
                   {getTotalEstimatedTargetTime() || '0 min'}
@@ -964,11 +973,11 @@ export default function ProductionForm({
                   {
                     backgroundColor: '#fff',
                     height: 43,
-                    flexDirection: 'row', 
+                    flexDirection: 'row', // Places items side-by-side
                     justifyContent: 'center',
                     alignItems: 'center',
                     paddingVertical: 4,
-                    gap: 6, 
+                    gap: 6, // Adds space between the number and time
                   },
                 ]}
               >
@@ -986,7 +995,7 @@ export default function ProductionForm({
                   style={{
                     fontSize: 10,
                     fontWeight: '700',
-                    color: '#10B981', 
+                    color: '#10B981', // Green
                   }}
                 >
                   {getTotalActualEstimatedTime()}
@@ -1013,86 +1022,69 @@ export default function ProductionForm({
 
           <View style={styles.formGroup}>
             <Text style={styles.label}>Remarks</Text>
-            <View style={{ position: 'relative' }}>
-              {/* MODIFIED TEXTINPUT TO SUPPORT RICH TEXT */}
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                multiline
-                numberOfLines={3}
-                placeholder="Enter Remarks"
-                onChangeText={(text) => {
-                  // Transform 'offline :' to 'Offline :' dynamically
-                  const updatedText = text.replace(/offline\s*:/ig, 'Offline :');
-                  setRemarks(updatedText);
-                  
-                  const currentLine = updatedText.split('\n').pop()?.trim() || '';
+<View style={{ position: 'relative' }}>
+  <TextInput
+    style={[styles.input, styles.textArea]}
+    value={remarks}
+    multiline
+    numberOfLines={3}
+    placeholder="Enter Remarks"
+onChangeText={(text) => {
+  setRemarks(text);
 
-                  if (currentLine.length === 0) {
-                    setRemarksDropdownVisible(false);
-                    return;
-                  }
+  // Current line only
+  const currentLine = text.split('\n').pop()?.trim() || '';
 
-                  const filtered = REMARK_SUGGESTIONS.filter(item =>
-                    item.toLowerCase().includes(currentLine.toLowerCase())
-                  );
+  if (currentLine.length === 0) {
+    setRemarksDropdownVisible(false);
+    return;
+  }
 
-                  setFilteredRemarks(filtered);
-                  setRemarksDropdownVisible(filtered.length > 0);
-                }}
-                onBlur={() => setTimeout(() => setRemarksDropdownVisible(false), 150)}
-                onFocus={() => {
-                  if (filteredRemarks.length > 0) setRemarksDropdownVisible(true);
-                }}
-              >
-                <Text>
-                  {remarks.split(/(Offline\s*:)/).map((part, index) => {
-                    // Underline and Bold the Heading
-                    if (part === 'Offline :') {
-                      return (
-                        <Text key={index} style={{ textDecorationLine: 'underline', fontWeight: 'bold', color: '#1f1f1f' }}>
-                          {part}
-                        </Text>
-                      );
-                    }
-                    // Grey out and Italicize anything AFTER the heading
-                    if (index > 0) {
-                      return (
-                        <Text key={index} style={{ color: '#9ca3af', fontStyle: 'italic' }}>
-                          {part}
-                        </Text>
-                      );
-                    }
-                    // Normal text BEFORE the heading
-                    return (
-                      <Text key={index} style={{ color: '#1f1f1f' }}>
-                        {part}
-                      </Text>
-                    );
-                  })}
-                </Text>
-              </TextInput>
+  const filtered = REMARK_SUGGESTIONS.filter(item =>
+    item.toLowerCase().includes(currentLine.toLowerCase())
+  );
 
-              {remarksDropdownVisible && (
-                <View style={styles.dropdownContainer}>
-                  <ScrollView style={styles.dropdownScroll} keyboardShouldPersistTaps="always">
-                    {filteredRemarks.map((item, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={styles.dropdownItem}
-                        onPress={() => {
-                          const lines = remarks.split('\n');
-                          lines[lines.length - 1] = item;
-                          setRemarks(lines.join('\n'));
-                          setRemarksDropdownVisible(false);
-                        }}
-                      >
-                        <Text style={styles.dropdownText}>{item}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
+  setFilteredRemarks(filtered);
+  setRemarksDropdownVisible(filtered.length > 0);
+}}
+    onBlur={() =>
+      setTimeout(() => setRemarksDropdownVisible(false), 150)
+    }
+    onFocus={() => {
+      if (filteredRemarks.length > 0)
+        setRemarksDropdownVisible(true);
+    }}
+  />
+
+  {remarksDropdownVisible && (
+    <View style={styles.dropdownContainer}>
+      <ScrollView
+        style={styles.dropdownScroll}
+        keyboardShouldPersistTaps="always"
+      >
+        {filteredRemarks.map((item, index) => (
+          <TouchableOpacity
+            key={index}
+            style={styles.dropdownItem}
+         onPress={() => {
+  const lines = remarks.split('\n');
+
+  // Replace only the last line
+  lines[lines.length - 1] = item;
+
+  setRemarks(lines.join('\n'));
+  setRemarksDropdownVisible(false);
+}}
+          >
+            <Text style={styles.dropdownText}>
+              {item}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  )}
+</View>
           </View>
 
           <View style={styles.row}>
@@ -1253,6 +1245,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontWeight: 'bold',
   },
+  // Row styles for UPH, Model, Target, and Actual (Qty)
   uphInput: {
     flex: .5,
     marginRight: 6,
@@ -1340,6 +1333,15 @@ const styles = StyleSheet.create({
     maxHeight: 220,
     backgroundColor: '#fff',
   },
+  dropdownWithButtons: {
+    flexDirection: 'row',
+    backgroundColor: '#fff', 
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    overflow: 'hidden',
+    elevation: 3, 
+  },
   dropdownItem: {
     padding: 12,
     borderBottomWidth: 1,
@@ -1350,46 +1352,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#374151',
   },
-  targetContainer: {
-    flex: 1,
-    marginRight: 6,
-    position: 'relative',
-  },
-  targetInput: {
-    paddingTop: 8,
-    paddingBottom: 18, 
-    paddingHorizontal: 4,
-    textAlign: 'center',
-  },
-  finishTimeText: {
-    position: 'absolute',
-    bottom: 4,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    fontSize: 9,
-    color: '#2563eb',
-    fontWeight: '700',
-  },
-  quantityContainer: {
-    flex: 1,
-    marginRight: 6,
-    position: 'relative',
-  },
-  quantityInput: {
-    paddingTop: 8,
-    paddingBottom: 18,
-    paddingHorizontal: 4,
-    textAlign: 'center',
-  },
-  actualTimeText: {
-    position: 'absolute',
-    bottom: 4,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#10B981',
-  },
+targetContainer: {
+  flex: 1,
+  marginRight: 6,
+  position: 'relative',
+},
+
+targetInput: {
+  paddingTop: 8,
+  paddingBottom: 18, // Space for the finish time
+  paddingHorizontal: 4,
+  textAlign: 'center',
+},
+
+finishTimeText: {
+  position: 'absolute',
+  bottom: 4,
+  left: 0,
+  right: 0,
+  textAlign: 'center',
+  fontSize: 9,
+  color: '#2563eb',
+  fontWeight: '700',
+},
+quantityContainer: {
+  flex: 1,
+  marginRight: 6,
+  position: 'relative',
+},
+
+quantityInput: {
+  paddingTop: 8,
+  paddingBottom: 18,
+  paddingHorizontal: 4,
+  textAlign: 'center',
+},
+
+actualTimeText: {
+  position: 'absolute',
+  bottom: 4,
+  left: 0,
+  right: 0,
+  textAlign: 'center',
+  fontSize: 9,
+  fontWeight: '700',
+  color: '#10B981',
+},
 });

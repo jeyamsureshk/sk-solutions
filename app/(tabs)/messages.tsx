@@ -177,7 +177,7 @@ export default function MessagesIndex() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f3f4f6' },
+  safeArea: { flex: 1, backgroundColor: '#f3f4f6',    marginTop:-35 },
 
   header: {
     paddingTop: 50,

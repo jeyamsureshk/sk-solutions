@@ -8,11 +8,17 @@ export function useTotalUnreadCount(userId?: string) {
   useEffect(() => {
     if (!userId) return;
 
+    let isActive = true;
     fetchTotalUnread();
     const channelName = `total-unread-channel_${Date.now()}`;
+    const existingChannel = supabase
+      .getChannels()
+      .find((registeredChannel) => registeredChannel.topic === `realtime:${channelName}`);
+    if (existingChannel) void supabase.removeChannel(existingChannel);
+
     // Subscribe to realtime changes
     const channel = supabase
-      .channel('channelName')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -23,7 +29,7 @@ export function useTotalUnreadCount(userId?: string) {
         (payload) => {
           const newMsg = payload.new as any;
           // Only update if the message is for the current user and unread
-          if (newMsg.receiver_id === userId && !newMsg.read) {
+          if (isActive && newMsg.receiver_id === userId && !newMsg.read) {
             setTotalUnread((prev) => prev + 1);
           }
         }
@@ -38,7 +44,7 @@ export function useTotalUnreadCount(userId?: string) {
         (payload) => {
           const updatedMsg = payload.new as any;
           // If a message was marked as read by the current user
-          if (updatedMsg.receiver_id === userId && updatedMsg.read) {
+          if (isActive && updatedMsg.receiver_id === userId && updatedMsg.read) {
             fetchTotalUnread(); // Refetch total count
           }
         }
@@ -46,7 +52,8 @@ export function useTotalUnreadCount(userId?: string) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      isActive = false;
+      void supabase.removeChannel(channel);
     };
   }, [userId]);
 

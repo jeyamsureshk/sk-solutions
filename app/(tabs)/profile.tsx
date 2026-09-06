@@ -630,7 +630,7 @@ const handleDeleteDocument = (fileName: string) => {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.background },
+  safeArea: { flex: 1, backgroundColor: COLORS.background,    marginTop:-40, },
   container: { paddingBottom: 40 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 16, color: COLORS.secondary, fontWeight: '600' },

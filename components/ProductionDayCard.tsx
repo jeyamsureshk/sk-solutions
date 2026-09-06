@@ -203,41 +203,63 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
         justifyContent: 'center',
       }}
     >
-      {lines.map((line, index) => {
-        if (!line.trim()) return null;
+      {(() => {
+        let hasSeenOffline = false; // Tracks if we passed "Offline :"
+        return lines.map((line, index) => {
+          if (!line.trim()) return null;
 
-        const lower = line.toLowerCase();
+          const lower = line.toLowerCase();
+          const isError = [
+            'problem', 'issue', 'fault', 'delay', 'missing', 'damage', 'touch up', 'miss match', 'shortage'
+          ].some((w) => lower.includes(w));
 
-        const isError = [
-          'problem',
-          'issue',
-          'fault',
-          'delay',
-          'missing',
-          'damage',
-          'touch up',
-          'miss match',
-          'shortage',
-        ].some((w) => lower.includes(w));
+          const formattedLine = toProperCase(line).replace(/offline\s*:/ig, 'Offline :');
 
-        const formattedLine = toProperCase(line);
+          if (formattedLine.includes('Offline :')) {
+            const parts = formattedLine.split(/(Offline\s*:)/);
+            return (
+              <Text key={index} style={[styles.tdHandwriting, { marginBottom: 2 }]}>
+                {parts.map((part, pIdx) => {
+                  if (part === 'Offline :') {
+                    hasSeenOffline = true;
+                    return (
+                      <Text key={pIdx} style={{ textDecorationLine: 'underline', fontWeight: 'bold', color: THEME.primary }}>
+                        {part}
+                      </Text>
+                    );
+                  }
+                  return (
+                    <Text
+                      key={pIdx}
+                      style={{
+                        color: hasSeenOffline ? '#9ca3af' : (isError ? THEME.error : THEME.markerBlack),
+                        fontStyle: hasSeenOffline ? 'italic' : 'normal',
+                      }}
+                    >
+                      {part}
+                    </Text>
+                  );
+                })}
+              </Text>
+            );
+          }
 
-        return (
-          <Text
-            key={index}
-            style={[
-              styles.tdHandwriting,
-              {
-                color: isError
-                  ? THEME.error
-                  : THEME.markerBlack,
-                marginBottom: 2,
-              },
-            ]}>
-            {formattedLine}
-          </Text>
-        );
-      })}
+          return (
+            <Text
+              key={index}
+              style={[
+                styles.tdHandwriting,
+                {
+                  color: hasSeenOffline ? '#9ca3af' : (isError ? THEME.error : THEME.markerBlack),
+                  fontStyle: hasSeenOffline ? 'italic' : 'normal',
+                  marginBottom: 2,
+                },
+              ]}>
+              {formattedLine}
+            </Text>
+          );
+        });
+      })()}
     </View>
 
   </View>

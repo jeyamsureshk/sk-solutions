@@ -13,7 +13,7 @@ import {
   Modal,
   StatusBar,
   Easing,
-  Keyboard, // Import Keyboard
+  Keyboard, 
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -158,9 +158,19 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
+    let isActive = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user || !isActive) return;
+
+      const channelName = `messages-${user.id}-${partnerId}`;
+      const existingChannel = supabase
+        .getChannels()
+        .find((registeredChannel) => registeredChannel.topic === `realtime:${channelName}`);
+      if (existingChannel) await supabase.removeChannel(existingChannel);
+
       setCurrentUserId(user.id);
 
       const { data: profile } = await supabase
@@ -184,12 +194,13 @@ useEffect(() => {
         .order('created_at', { ascending: true });
 
       const fetchedMessages = (data as Message[]) || [];
+      if (!isActive) return;
       setMessages(fetchedMessages);
 
       setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100);
 
-      channelRef.current = supabase
-        .channel(`messages-${user.id}-${partnerId}`)
+      channel = supabase
+        .channel(channelName)
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'messages' },
@@ -229,12 +240,21 @@ useEffect(() => {
             }
         )
         .subscribe();
+
+      if (!isActive && channel) {
+        await supabase.removeChannel(channel);
+        channel = null;
+      } else {
+        channelRef.current = channel;
+      }
     };
 
     init();
 
     return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      isActive = false;
+      if (channel) supabase.removeChannel(channel);
+      if (channelRef.current === channel) channelRef.current = null;
     };
   }, [partnerId]);
 
@@ -295,6 +315,14 @@ useEffect(() => {
         },
       },
     ]);
+  };
+
+  const toggleSelect = (messageId: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(messageId)
+        ? prev.filter((id) => id !== messageId)
+        : [...prev, messageId]
+    );
   };
 
   const backgroundOptions: BackgroundOption[] = [
@@ -560,7 +588,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 15,
     paddingVertical: 10,
-    height: 60,
+    // Removed height: 10 to fix the clipping issue
   },
   headerButton: {
     padding: 8,
