@@ -17,7 +17,7 @@ import {
   Mail, 
   Timer, 
   BookOpen, 
-  Lock,
+  Lock,ScanLine,
   MessageSquare // Added for the new messages tab
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -92,21 +92,27 @@ export default function TabLayout() {
         }}
       >
         <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Dashboard',
-            tabBarLabel: 'Dashboard',
-            tabBarIcon: ({ size, color }) => <BarChart3 size={size} color={color} />,
-             headerRight: () => (
-              <View style={{ flexDirection: 'row', marginRight: 16 }}>
-                <TouchableOpacity onPress={() => router.push('/study-materials')} style={styles.headerBtn}>
-                <BookOpen size={18} color="#ffffff" style={{ marginRight: 6 }} />
-                  <Text style={styles.headerBtnText}>Refrences</Text>
-                </TouchableOpacity>
-              </View>
-            ),
-          }}
-        />
+  name="index"
+  options={{
+    title: 'Dashboard',
+    tabBarLabel: 'Dashboard',
+    tabBarIcon: ({ size, color }) => <BarChart3 size={size} color={color} />,
+    headerRight: () => (
+      <View style={{ flexDirection: 'row', marginRight: 16 }}>
+        <TouchableOpacity onPress={() => router.push('/study-materials')} style={styles.headerBtn}>
+          <BookOpen size={18} color="#ffffff" style={{ marginRight: 6 }} />
+          <Text style={styles.headerBtnText}>References</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity onPress={() => router.push('/scanner')} style={styles.headerBtn}>
+          {/* Replaced BookOpen with ScanLine */}
+          <ScanLine size={18} color="#ffffff" style={{ marginRight: 6 }} />
+          <Text style={styles.headerBtnText}>Scanner</Text>
+        </TouchableOpacity>
+      </View>
+    ),
+  }}
+/>
 
         <Tabs.Screen
           name="add-production"
