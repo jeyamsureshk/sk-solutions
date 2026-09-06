@@ -9,10 +9,10 @@ export function useTotalUnreadCount(userId?: string) {
     if (!userId) return;
 
     fetchTotalUnread();
-
+    const channelName = `total-unread-channel_${Date.now()}`;
     // Subscribe to realtime changes
     const channel = supabase
-      .channel('total-unread-channel')
+      .channel('channelName')
       .on(
         'postgres_changes',
         {

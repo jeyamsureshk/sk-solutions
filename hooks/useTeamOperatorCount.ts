@@ -68,9 +68,9 @@ export const useTeamOperatorCount = () => {
 
   useEffect(() => {
     fetchTeamOperatorCount();
-
+    const channelName = `team_operators_updates_${Date.now()}`;
     const channel = supabase
-      .channel('team_operators_updates')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

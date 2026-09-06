@@ -6,17 +6,11 @@ import {
   StyleSheet,
   Modal,
   Platform,
-  UIManager,
   Pressable,
 } from 'react-native';
 import { ProductionRecord } from '@/types/database';
 import { Edit2, Trash2 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 interface ProductionDayCardProps {
   team: string;

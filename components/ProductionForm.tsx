@@ -712,13 +712,14 @@ item: models
             </View>
           </View>
 
-          {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />}
+          {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onValueChange={onDateChange} onDismiss={() => setShowDatePicker(false)} />}
           {showTimePicker && (
             <DateTimePicker
               value={new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)}
               mode="time"
               display="default"
-              onChange={onTimeChange}
+              onValueChange={onTimeChange}
+              onDismiss={() => setShowTimePicker(false)}
             />
           )}
 
@@ -728,7 +729,8 @@ item: models
               value={new Date()}
               mode="time"
               display="default"
-              onChange={onModelTimeChange}
+              onValueChange={onModelTimeChange}
+              onDismiss={() => setModelTimePickerState(null)}
             />
           )}
 

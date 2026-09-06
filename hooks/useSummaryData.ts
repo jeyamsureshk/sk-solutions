@@ -175,9 +175,9 @@ export function useSummaryData(selectedDate: SelectedDate, period: PeriodType) {
 
   useEffect(() => {
     fetchSummary();
-
+    const channelName = `summary_updates_${Date.now()}`;
     const channel = supabase
-      .channel('summary_updates')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

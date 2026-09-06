@@ -134,10 +134,11 @@ export default function OvertimeForm({ operatorId, date, onSuccess }: Props) {
           value={parseLocalDate(formData.date)}
           mode="date"
           display="default"
-          onChange={(_, picked) => {
+          onValueChange={(_, picked) => {
             setShowDate(false);
             if (picked) patch({ date: formatLocalDate(picked) });
           }}
+          onDismiss={() => setShowDate(false)}
         />
       )}
 

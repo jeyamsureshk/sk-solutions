@@ -92,9 +92,9 @@ export function useOvertimeRecords(filters: OvertimeFilters = {}) {
 
   useEffect(() => {
     fetchRecords();
-
+    const channelName = `overtime_records_changes_${Date.now()}`;
     const channel = supabase
-      .channel('overtime_records_changes')
+      .channel(channelName)
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'overtime_records' }, 
         () => fetchRecords()

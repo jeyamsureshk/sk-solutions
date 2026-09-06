@@ -179,7 +179,8 @@ export default function RecordsScreen() {
                   value={filters.fromDate ? new Date(filters.fromDate) : new Date()}
                   mode="date"
                   display="default"
-                  onChange={onFromDateChange}
+                  onValueChange={onFromDateChange}
+                  onDismiss={() => setShowFromDatePicker(false)}
                 />
               )}
             </View>
@@ -193,7 +194,8 @@ export default function RecordsScreen() {
                   value={filters.toDate ? new Date(filters.toDate) : new Date()}
                   mode="date"
                   display="default"
-                  onChange={onToDateChange}
+                  onValueChange={onToDateChange}
+                  onDismiss={() => setShowToDatePicker(false)}
                 />
               )}
             </View>

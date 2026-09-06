@@ -123,9 +123,9 @@ export function useStudyMaterials() {
   };
   useEffect(() => {
     fetchMaterials();
-
+    const channelName=`study_materials_changes_${Date.now()}`;
     const channel = supabase
-      .channel('study_materials_changes')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

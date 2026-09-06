@@ -8,8 +8,8 @@ import {
   ScrollView, 
   KeyboardAvoidingView, 
   Platform,
-  SafeAreaView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -17,7 +17,7 @@ import Animated, {
   FadeIn,
   Layout,
 } from 'react-native-reanimated';
-import { Audio } from 'expo-av';
+import { useAudioPlayer } from 'expo-audio';
 
 // Multimeter Theme Constants
 const DMM_THEME = {
@@ -133,7 +133,11 @@ export default function MultimeterSimulator() {
     let currentSound: Audio.Sound | null = null;
     const playBeep = async () => {
       try {
-        const { sound } = await Audio.Sound.createAsync(require('@/assets/sounds/beep.mp3'));
+const beepSound = useAudioPlayer(require('../../assets/beep.mp3'));
+
+  const playBeep = () => {
+    beepSound.play();
+  };
         currentSound = sound;
         await sound.setIsLoopingAsync(true);
         await sound.playAsync();

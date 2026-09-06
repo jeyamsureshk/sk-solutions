@@ -117,10 +117,11 @@ export default function YieldRecordsList({
           value={selectedDate || new Date()}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(event, date) => {
+          onValueChange={(event, date) => {
             setShowPicker(false);
             if (date) setSelectedDate(date);
           }}
+          onDismiss={() => setShowPicker(false)}
         />
       )}
 

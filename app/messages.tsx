@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  SafeAreaView,
   Text,
   TouchableOpacity,
   StyleSheet,
@@ -8,6 +7,7 @@ import {
   View,
   TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useOperators } from '@/hooks/useOperators';
 import { useProfiles } from '@/hooks/useProfiles';

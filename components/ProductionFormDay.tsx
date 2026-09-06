@@ -623,18 +623,16 @@ const handleSubmitAll = async () => {
     }
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
+  const onDateChange = (_event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
-    // ONLY update if explicitly setting (Pressing OK)
-    if (event.type === 'set' && selectedDate) {
+    if (selectedDate) {
       setDate(selectedDate.toISOString().split('T')[0]);
     }
   };
 
-  const onTimeChange = (event: any, selectedTime?: Date) => {
+  const onTimeChange = (_event: any, selectedTime?: Date) => {
     setShowTimePicker(false);
-    // ONLY update if user explicitly selected a time (pressed OK)
-    if (event.type === 'set' && selectedTime) {
+    if (selectedTime) {
       const h = selectedTime.getHours();
       const m = selectedTime.getMinutes();
       const formatted = m >= 30 ? `${h}.5` : `${h}`;
@@ -949,25 +947,25 @@ const handleSubmitAll = async () => {
           </View>
         </Modal>
 
-        {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />}
+        {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onValueChange={onDateChange} onDismiss={() => setShowDatePicker(false)} />}
         
         {showTimePicker && activeTimeIndex !== null && (
           <DateTimePicker 
             value={getSafeDateFromHour(entries[activeTimeIndex]?.hour || "0")} 
             mode="time" 
             display="default" 
-            onChange={onTimeChange} 
+            onValueChange={onTimeChange} 
+            onDismiss={() => setShowTimePicker(false)}
           />
         )}
         
         {modelTimePickerState && (
           <DateTimePicker
             value={new Date()} mode="time" display="default"
-            onChange={(event, selectedTime) => {
+            onValueChange={(event, selectedTime) => {
               const state = modelTimePickerState;
               setModelTimePickerState(null);
-              // ONLY update if explicitly setting (Pressing OK)
-              if (event.type === 'set' && selectedTime && state) {
+              if (selectedTime && state) {
                 const h = selectedTime.getHours().toString().padStart(2, '0');
                 const m = selectedTime.getMinutes().toString().padStart(2, '0');
                 
@@ -975,6 +973,7 @@ const handleSubmitAll = async () => {
                 updateModel(state.entryIndex, state.modelIndex, state.field, `${h}:${m}`);
               }
             }}
+            onDismiss={() => setModelTimePickerState(null)}
           />
         )}
       </KeyboardAvoidingView>

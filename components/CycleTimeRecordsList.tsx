@@ -11,7 +11,7 @@ import {
 import { CycleTimeRecord } from '@/types/database';
 import CycleTimeRecordItem from './CycleTimeRecordItem';
 import { supabase } from '@/lib/supabase'; // adjust import to your setup
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation } from 'expo-router';
 
 interface CycleTimeRecordsListProps {
   records: CycleTimeRecord[];

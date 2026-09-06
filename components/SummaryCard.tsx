@@ -89,11 +89,11 @@ export default function SummaryCard({
     }
   };
 
-  const onEtaChange = (event: any, selectedDateObj?: Date) => {
+  const onEtaChange = (_event: any, selectedDateObj?: Date) => {
     const model = etaPickerModel;
     setEtaPickerModel(null); 
 
-    if (event.type === 'set' && selectedDateObj && model) {
+    if (selectedDateObj && model) {
       const year = selectedDateObj.getFullYear();
       const month = String(selectedDateObj.getMonth() + 1).padStart(2, '0');
       const day = String(selectedDateObj.getDate()).padStart(2, '0');
@@ -511,7 +511,8 @@ const formatDateDisplay = (date: Date) => {
           value={planData[etaPickerModel]?.eta ? new Date(planData[etaPickerModel].eta) : new Date()}
           mode="date"
           display="default"
-          onChange={onEtaChange}
+          onValueChange={onEtaChange}
+          onDismiss={() => setEtaPickerModel(null)}
         />
       )}
     </View>

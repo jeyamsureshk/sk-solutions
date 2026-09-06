@@ -184,30 +184,33 @@ export default function AddAttendanceForm({ operatorId, date, onSuccess }: Props
         <DateTimePicker
           value={formData.check_in ? new Date(formData.check_in) : new Date(new Date().setHours(8, 30, 0))}
           mode="time"
-          onChange={(_, picked) => {
+          onValueChange={(_, picked) => {
             setShowCheckIn(false);
             if (picked) patch({ check_in: picked.toISOString() });
           }}
+          onDismiss={() => setShowCheckIn(false)}
         />
       )}
       {showCheckOut && (
         <DateTimePicker
           value={formData.check_out ? new Date(formData.check_out) : new Date(new Date().setHours(18, 0, 0))}
           mode="time"
-          onChange={(_, picked) => {
+          onValueChange={(_, picked) => {
             setShowCheckOut(false);
             if (picked) patch({ check_out: picked.toISOString() });
           }}
+          onDismiss={() => setShowCheckOut(false)}
         />
       )}
       {showDatePicker && (
         <DateTimePicker
           value={parseLocalDate(formData.date)}
           mode="date"
-          onChange={(_, picked) => {
+          onValueChange={(_, picked) => {
             setShowDatePicker(false);
             if (picked) patch({ date: formatLocalDate(picked) });
           }}
+          onDismiss={() => setShowDatePicker(false)}
         />
       )}
 

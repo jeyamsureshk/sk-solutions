@@ -759,7 +759,7 @@ const onTimeChange = (_event: any, selectedTime?: Date) => {
         </Modal>
 
         {showDatePicker && (
-          <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />
+          <DateTimePicker value={new Date(date)} mode="date" display="default" onValueChange={onDateChange} onDismiss={() => setShowDatePicker(false)} />
         )}
         
         {showTimePicker && (
@@ -767,7 +767,8 @@ const onTimeChange = (_event: any, selectedTime?: Date) => {
               value={new Date()}
               mode="time"
               display="default"
-              onChange={onTimeChange}
+              onValueChange={onTimeChange}
+              onDismiss={() => setShowTimePicker(false)}
           />
         )}
       </KeyboardAvoidingView>

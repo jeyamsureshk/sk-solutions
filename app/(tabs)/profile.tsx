@@ -7,13 +7,13 @@ import {
   ScrollView,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
   ActivityIndicator,
   RefreshControl,
   TextInput,
   Image,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';

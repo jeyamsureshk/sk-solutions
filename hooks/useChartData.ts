@@ -108,9 +108,9 @@ export function useChartData(selectedDate: SelectedDate, period: PeriodType) {
 
   useEffect(() => {
     fetchChartData();
-
+    const channelName = `chart_updates_${Date.now()}`;
     const channel = supabase
-      .channel('chart_updates')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

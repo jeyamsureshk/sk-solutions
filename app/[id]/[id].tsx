@@ -22,7 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { Message, MessageInsert } from '@/types/database';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
+import { useAudioPlayer } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import sendSoundFile from '@/assets/sounds/send.mp3';
@@ -69,6 +69,8 @@ export default function ChatScreen() {
 
   const [notifMessage, setNotifMessage] = useState('');
   const notifAnim = useRef(new Animated.Value(-150)).current; 
+  const sendSound = useAudioPlayer(sendSoundFile);
+  const receiveSound = useAudioPlayer(receiveSoundFile);
 
   // --- NEW: Track Keyboard Visibility ---
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -142,16 +144,9 @@ useEffect(() => {
   const animMap = useRef<Record<string, Animated.Value>>({});
   const channelRef = useRef<any>(null);
 
-  const playSound = async (file: any) => {
-    try {
-      const { sound } = await Audio.Sound.createAsync(file);
-      await sound.playAsync();
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) sound.unloadAsync();
-      });
-    } catch (error) {
-      console.log('Error playing sound', error);
-    }
+  const playSound = (sound: ReturnType<typeof useAudioPlayer>) => {
+    sound.seekTo(0);
+    sound.play();
   };
 
   useEffect(() => {
@@ -208,7 +203,7 @@ useEffect(() => {
             });
 
             if (msg.sender_id === partnerId) {
-              playSound(receiveSoundFile);
+              playSound(receiveSound);
               showNewMessageNotification(msg.content);
               await supabase.from('messages').update({ read: true }).eq('id', msg.id);
             }
@@ -243,7 +238,7 @@ useEffect(() => {
     };
   }, [partnerId]);
 
-  const handleSend = async () => {
+   const handleSend = async () => {
     const messageText = text.trim();
     if (!currentUserId || !partnerId || !messageText) return;
 
@@ -257,24 +252,30 @@ useEffect(() => {
       created_at: new Date().toISOString(),
     };
 
+    // 1. Setup Animation
     animMap.current[optimistic.id] = new Animated.Value(0);
+    
+    // 2. Update UI Immediately
     setMessages((prev) => [...prev, optimistic]);
     setText('');
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-    Animated.timing(animMap.current[optimistic.id], { toValue: 1, duration: 300, useNativeDriver: true }).start();
-    playSound(sendSoundFile);
+    
+    Animated.timing(animMap.current[optimistic.id], { 
+      toValue: 1, 
+      duration: 300, 
+      useNativeDriver: true 
+    }).start();
 
+    // 3. Play the sound using expo-audio (using replay handles rapid-fire sending)
+    playSound(sendSound);
+
+    // 4. Background Database Insert
     const { error } = await supabase.from('messages').insert(optimistic as MessageInsert);
     if (error) {
+      // Rollback on failure
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-      Alert.alert('Error', 'Failed to send');
+      Alert.alert('Error', 'Failed to send message');
     }
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
   };
 
   const handleDeleteSelected = async () => {

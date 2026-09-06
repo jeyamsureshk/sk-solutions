@@ -133,7 +133,8 @@ export default function DashboardScreen() {
             value={selectedDate}
             mode="date"
             display="default"
-            onChange={onDateChange}
+            onValueChange={onDateChange}
+            onDismiss={() => setShowDatePicker(false)}
           />
         )}
       </View>

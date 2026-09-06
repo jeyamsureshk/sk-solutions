@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
 import { YieldInsert } from '@/types/database';
 import { supabase } from '@/lib/supabase';
 import { Calendar, Package, Users, Info, PlusCircle, XCircle, ChevronRight } from 'lucide-react-native';
@@ -62,7 +62,7 @@ export default function YieldForm({
     getCurrentUser();
   }, []);
 
-  const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+  const onDateChange = (event: DateTimePickerChangeEvent, selectedDate?: Date) => {
     // Android requires manual closing, iOS handles it via the modal interaction
     if (Platform.OS === 'android') setShowDatePicker(false);
     
@@ -127,7 +127,8 @@ export default function YieldForm({
               value={date}
               mode="date"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              onChange={onDateChange}
+              onValueChange={onDateChange}
+              onDismiss={() => setShowDatePicker(false)}
               maximumDate={new Date()} // Prevent picking future dates
             />
           )}

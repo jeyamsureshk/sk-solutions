@@ -101,9 +101,9 @@ export function useOverallTrend(selectedDate: SelectedDate, period: PeriodType) 
 
   useEffect(() => {
     fetchOverallTrend();
-
+    const channelName = `overall_trend_updates_${Date.now()}`;
     const channel = supabase
-      .channel('overall_trend_updates')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

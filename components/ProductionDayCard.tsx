@@ -5,8 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
-  Platform,
-  UIManager,
   Pressable,
   Alert,
 } from 'react-native';
@@ -17,11 +15,6 @@ import { supabase } from '@/lib/supabase';
 // --- New Imports for Sharing ---
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 interface ProductionDayCardProps {
   team: string;

@@ -98,9 +98,9 @@ export const useYield = () => {
 
   useEffect(() => {
     fetchYieldRecords();
-
+    const channelName = `yield_updates_${Date.now()}`;
     const channel = supabase
-      .channel('yield_updates')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

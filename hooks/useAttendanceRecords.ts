@@ -90,9 +90,9 @@ export function useAttendanceRecords(filters: AttendanceFilters = {}) {
 
   useEffect(() => {
     fetchRecords();
-
+    const channelName = `attendance_records_changes_${Date.now()}`;
     const channel = supabase
-      .channel('attendance_records_changes')
+      .channel(channelName)
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'attendance_records' }, 
         () => fetchRecords()
