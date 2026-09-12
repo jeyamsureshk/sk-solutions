@@ -354,14 +354,42 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
           {/* --- Table Grid --- */}
           <View style={styles.tableContainer}>
             {/* Table Head */}
-            <View style={styles.tableHeaderRow}>
-              <View style={[styles.cell, styles.colHour]}><Text style={styles.thText}>HOURS</Text></View>
-              <View style={[styles.cell, styles.colModel]}><Text style={styles.thText}>MODEL</Text></View>
-              <View style={[styles.cell, styles.colQtySmall]}><Text style={styles.thText}>TARGET</Text></View>
-              <View style={[styles.cell, styles.colQtySmall]}><Text style={styles.thText}>ACTUAL</Text></View>
-              <View style={[styles.cell, styles.colMP]}><Text style={styles.thText}>MP</Text></View>
-              <View style={[styles.cell, styles.colRemarks, { borderRightWidth: 0 }]}><Text style={styles.thText}>REMARKS</Text></View>
-            </View>
+<View style={styles.tableHeaderRow}>
+  {/* HOURS */}
+  <View style={[styles.cell, styles.colHour]}>
+    <Text style={styles.thText}>HOURS</Text>
+  </View>
+
+  {/* UPH */}
+  <View style={[styles.cell, styles.colUPH]}>
+    <Text style={styles.thText}>UPH</Text>
+  </View>
+
+  {/* MODEL */}
+  <View style={[styles.cell, styles.colModel]}>
+    <Text style={styles.thText}>MODEL</Text>
+  </View>
+
+  {/* TARGET */}
+  <View style={[styles.cell, styles.colQtySmall]}>
+    <Text style={styles.thText}>TARGET</Text>
+  </View>
+
+  {/* ACTUAL */}
+  <View style={[styles.cell, styles.colQtySmall]}>
+    <Text style={styles.thText}>ACTUAL</Text>
+  </View>
+
+  {/* MP */}
+  <View style={[styles.cell, styles.colMP]}>
+    <Text style={styles.thText}>MP</Text>
+  </View>
+
+  {/* REMARKS */}
+  <View style={[styles.cell, styles.colRemarks, { borderRightWidth: 0 }]}>
+    <Text style={styles.thText}>REMARKS</Text>
+  </View>
+</View>
 
             {/* Table Body */}
             {records.map((record, index) => {
@@ -390,20 +418,22 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                     <Text style={styles.tdHour}>{timeRange.end}</Text>
                   </View>
 
-                  {/* 2 & 3. MODEL & ACTUAL (ROW-WISE) */}
+
+{/* 2 & 3. UPH + MODEL + TIME */}
 <View style={{ flex: 3.23 }}>
   {items.map((item, idx) => {
-   const meta = item as {
-  model?: string;
-  quantity?: number;
-  target?: number;
-  part_number?: string;
-  uph?: number | null;
-  target_estimated_time?: string;
-  actual_estimated_time?: string;
-  start_time?: string;
-  end_time?: string;
-};
+    const meta = item as {
+      model?: string;
+      quantity?: number;
+      target?: number;
+      part_number?: string;
+      uph?: number | null;
+      target_estimated_time?: string;
+      actual_estimated_time?: string;
+      start_time?: string;
+      end_time?: string;
+    };
+
     return (
       <View
         key={idx}
@@ -412,16 +442,26 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
           idx !== items.length - 1 && styles.subRowDivider,
         ]}
       >
-        {/* MODEL */}
-        <View style={[styles.cell, styles.subCellModel]}>
-          <Text style={styles.tdText}>{meta.model || '-'}</Text>
 
-          <View style={styles.metaRow}>
-            {meta.uph != null && (
-              <Text style={styles.uphHintText}>
-                UPH: {meta.uph.toFixed(0)}
-              </Text>
-            )}
+        {/* UPH */}
+        <View style={[styles.cell, styles.subCellUPH]}>
+          <Text style={styles.tdUPH}>
+            {meta.uph != null
+              ? Math.round(Number(meta.uph))
+              : '-'}
+          </Text>
+        </View>
+
+        {/* MODEL + START/END TIME */}
+        <View style={[styles.cell, styles.subCellModel]}>
+          <View style={styles.modelTimeRow}>
+            <Text
+              style={styles.tdText}
+              numberOfLines={1}
+            >
+              {meta.model || '-'}
+            </Text>
+
             {(meta.start_time || meta.end_time) && (
               <Text style={styles.timeHintText}>
                 {meta.start_time || '?'} - {meta.end_time || '?'}
@@ -430,41 +470,52 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
           </View>
         </View>
 
-        {/* Target */}
-   <View style={[styles.cell, styles.subCellQty]}>
-  <Text
-    style={[
-      styles.tdTextNumber,
-      { color: '#6B7280', fontWeight: '700' },
-    ]}
-  >
-    {meta.target ?? 0}
-  </Text>
-
-  {!!meta.target_estimated_time && (
-    <Text style={styles.estimateTargetText}>
-      {formatEstimatedTime(meta.target_estimated_time)}
-    </Text>
-  )}
-</View>
-
-        {/* PLAN */}
+        {/* TARGET */}
         <View style={[styles.cell, styles.subCellQty]}>
-  <Text
-    style={[
-      styles.tdTextNumber,
-      { color: actualColor, fontWeight: '700' },
-    ]}
-  >
-    {meta.quantity ?? '-'}
-  </Text>
+          <Text
+            style={[
+              styles.tdTextNumber,
+              {
+                color: '#6B7280',
+                fontWeight: '700',
+              },
+            ]}
+          >
+            {meta.target ?? 0}
+          </Text>
 
-  {!!meta.actual_estimated_time && (
-    <Text style={styles.estimateActualText}>
-      {formatEstimatedTime(meta.actual_estimated_time)}
-    </Text>
-  )}
-</View>
+          {!!meta.target_estimated_time && (
+            <Text style={styles.estimateTargetText}>
+              {formatEstimatedTime(
+                meta.target_estimated_time
+              )}
+            </Text>
+          )}
+        </View>
+
+        {/* ACTUAL */}
+        <View style={[styles.cell, styles.subCellQty]}>
+          <Text
+            style={[
+              styles.tdTextNumber,
+              {
+                color: actualColor,
+                fontWeight: '700',
+              },
+            ]}
+          >
+            {meta.quantity ?? '-'}
+          </Text>
+
+          {!!meta.actual_estimated_time && (
+            <Text style={styles.estimateActualText}>
+              {formatEstimatedTime(
+                meta.actual_estimated_time
+              )}
+            </Text>
+          )}
+        </View>
+
       </View>
     );
   })}
@@ -634,46 +685,73 @@ cardContainer: {
   },
 
   // --- Main Column Configs ---
-  colHour: { 
-    width: 42, 
-    backgroundColor: '#FAFAFA' 
-  },
-  colModel: { 
-    flex: 2.1,
-  },
-  colQtySmall: { 
-    width: 38, 
-  },
-  colMP: { 
-    width: 32 
-  },
-  colRemarks: { 
-    flex: 2.3, 
-    alignItems: 'flex-start', 
-    paddingHorizontal: 8 
+   // --- Main Column Configs ---
+  colHour: {
+    width: 42,
+    backgroundColor: '#FAFAFA',
   },
 
+  // Default/natural width for UPH
+  colUPH: {
+    width: 25,
+    backgroundColor: '#F8FAFC',
+  },
+
+  colModel: {
+    flex: 1.75,
+  },
+
+  colQtySmall: {
+    width: 38,
+  },
+
+  colMP: {
+    width: 32,
+  },
+
+  colRemarks: {
+    flex: 2.3,
+    alignItems: 'flex-start',
+    paddingHorizontal: 8,
+  },
   // --- Nested / Sub-Row Layout ---
-  subRow: { 
-    flexDirection: 'row', 
-    flex: 1 
+   // --- Nested / Sub-Row Layout ---
+  subRow: {
+    flexDirection: 'row',
+    flex: 1,
+    alignItems: 'stretch',
   },
-  subRowDivider: { 
-    borderBottomWidth: 1, 
-    borderBottomColor: THEME.divider1 
+
+  subRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.divider1,
   },
-  subCellModel: { 
-    flex: 1.5, 
-    borderRightWidth: 1, 
-    borderRightColor: THEME.divider, 
-    alignItems: 'flex-start', 
-    paddingHorizontal: 5, 
-    paddingVertical: 4 
+
+  subCellUPH: {
+    width: 25,
+    borderRightWidth: 1,
+    borderRightColor: THEME.divider,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    paddingVertical: 4,
   },
-  subCellQty: { 
-    width: 38, 
-    alignItems: 'center', 
-    paddingVertical: 4 
+
+  subCellModel: {
+    flex: 1,
+    borderRightWidth: 1,
+    borderRightColor: THEME.divider,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+  },
+
+  subCellQty: {
+    width: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
 
   // --- Typography & Badges ---
@@ -832,5 +910,30 @@ metricBadge: {
 metricBadgeText: {
   fontSize: 6.5,
   fontWeight: '700',
+},
+uphRow: {
+  minHeight: 34,
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingVertical: 4,
+},
+tdUPH: {
+  color: '#0369A1',
+  fontSize: 8.2,
+  fontWeight: '800',
+  textAlign: 'center',
+},
+modelTimeRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  width: '100%',
+  gap: 5,
+},
+
+timeHintText: {
+  color: '#64748B',
+  fontSize: 7.5,
+  fontWeight: '700',
+  flexShrink: 0,
 },
 });

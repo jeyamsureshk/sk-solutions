@@ -35,6 +35,8 @@ interface ModelEntry {
   start_time?: string; 
   end_time?: string;   
   stages?: number | null;
+  manual_start?: boolean; // Tracks if start time was manually picked
+  manual_end?: boolean;   // Tracks if end time was manually picked
 }
 
 // HELPER: Calculate Effective UPH based on Manpower and Stages
@@ -81,14 +83,18 @@ const addMinutesToTime = (time: string, minutes: number) => {
 };
 
 // Automatic model timing using Effective UPH
+// Automatic model timing using Effective UPH
 const recalculateModelTimes = (modelList: ModelEntry[], currentManpower: string | number) => {
   const updated = [...modelList];
 
   for (let index = 0; index < updated.length; index++) {
     const current = updated[index];
 
-    const startTime =
-      index === 0
+    // If manually overridden, use the manual start time. 
+    // Otherwise, calculate it automatically based on the previous model's end time.
+    const startTime = current.manual_start
+      ? current.start_time || ''
+      : index === 0
         ? current.start_time || ''
         : updated[index - 1].end_time || current.start_time || '';
 
@@ -103,19 +109,21 @@ const recalculateModelTimes = (modelList: ModelEntry[], currentManpower: string 
           ? (targetQty / effectiveUph) * 60
           : 0;
 
+    const calculatedEndTime =
+      startTime && durationMinutes > 0
+        ? addMinutesToTime(startTime, durationMinutes)
+        : startTime;
+
     updated[index] = {
       ...current,
       start_time: startTime,
-      end_time:
-        startTime && durationMinutes > 0
-          ? addMinutesToTime(startTime, durationMinutes)
-          : startTime,
+      // If manually overridden, use the manual end time. Otherwise, auto-calculate.
+      end_time: current.manual_end ? (current.end_time || '') : calculatedEndTime,
     };
   }
 
   return updated;
 };
-
 // Gets suggested target based on remaining minutes in the hour
 const getSuggestedTarget = (
   currentIndex: number,
@@ -300,7 +308,7 @@ export default function ProductionForm({
         setUnplanDt(initialData.unplan_dt?.toString() || '');
         setDefectQty(initialData.defect_qty?.toString() || '');
 
-        if (initialData.item && Array.isArray(initialData.item)) {
+       if (initialData.item && Array.isArray(initialData.item)) {
           const mappedItems = initialData.item.map((item: any) => ({
             model: item.model || '',
             quantity: Number(item.quantity) || 0,
@@ -309,7 +317,9 @@ export default function ProductionForm({
             target: item.target?.toString() || '',
             start_time: item.start_time || '', 
             end_time: item.end_time || '',     
-            stages: item.stages || null
+            stages: item.stages || null,
+            manual_start: true, // Prevents auto-calculator from destroying DB records
+            manual_end: true,   // Prevents auto-calculator from destroying DB records
           }));
           setModels(mappedItems);
         }
@@ -372,11 +382,16 @@ export default function ProductionForm({
     }
   };
 
-  const onTimeChange = (_event: any, selectedTime?: Date) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      const h = selectedTime.getHours();
-      const m = selectedTime.getMinutes();
+const onTimeChange = (event: any, selectedTime?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowTimePicker(false);
+    }
+    
+    const actualTime = selectedTime || (event instanceof Date ? event : null);
+    
+    if (actualTime) {
+      const h = actualTime.getHours();
+      const m = actualTime.getMinutes();
       const formatted = m >= 30 ? `${h}.5` : `${h}`;
       setHour(formatted);
 
@@ -387,79 +402,128 @@ export default function ProductionForm({
     }
   };
 
-  const onModelTimeChange = (_event: any, selectedTime?: Date) => {
-    const currentState = modelTimePickerState;
-    setModelTimePickerState(null); 
+const onModelTimeChange = (event: any, selectedTime?: Date) => {
+    if (Platform.OS === 'android') {
+      setModelTimePickerState(null);
+    }
     
-    if (selectedTime && currentState) {
-      const h = selectedTime.getHours().toString().padStart(2, '0');
-      const m = selectedTime.getMinutes().toString().padStart(2, '0');
+    const actualTime = selectedTime || (event instanceof Date ? event : null);
+    const currentState = modelTimePickerState;
+    
+    if (actualTime && currentState) {
+      const h = actualTime.getHours().toString().padStart(2, '0');
+      const m = actualTime.getMinutes().toString().padStart(2, '0');
       const formattedTime = `${h}:${m}`;
 
       const newModels = [...models];
       newModels[currentState.index] = {
         ...newModels[currentState.index],
         [currentState.field]: formattedTime,
+        // Mark this specific field as manually overridden so it doesn't get erased
+        ...(currentState.field === 'start_time' ? { manual_start: true } : { manual_end: true })
       };
+      
       setModels(recalculateModelTimes(newModels, manpower));
     }
   };
 
-  const getModelFinishTime = (target: string | undefined, uph: number | null, stages: number | null) => {
-    const targetQty = Number(target || 0);
-    const effectiveUph = getEffectiveUph(uph, stages, manpower);
+    const wholeMinutes = (minutes: number): number => {
+  if (!Number.isFinite(minutes)) return 0;
+  return Math.round(minutes);
+};
 
-    if (targetQty <= 0 || effectiveUph <= 0) return '';
+const getModelFinishTime = (
+  target: string | undefined,
+  uph: number | null,
+  stages: number | null
+) => {
+  const targetQty = Number(target || 0);
+  const effectiveUph = getEffectiveUph(uph, stages, manpower);
 
-    const exactMinutes = (targetQty / effectiveUph) * 60;
-    const totalMinutes = Math.round(exactMinutes * 10) / 10;
+  if (targetQty <= 0 || effectiveUph <= 0) return '';
 
-    if (totalMinutes < 60) return `${totalMinutes} min`;
+  // Calculate exact minutes, then SKIP decimal digits
+  // Example: 12.9 -> 12
+  const totalMinutes = wholeMinutes(
+    (targetQty / effectiveUph) * 60
+  );
 
-    const hrs = Math.floor(totalMinutes / 60);
-    const mins = Number((totalMinutes - hrs * 60).toFixed(1));
-    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
-  };
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hrs = Math.round(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  return mins === 0
+    ? `${hrs} hr`
+    : `${hrs} hr ${mins} min`;
+};
 
   const getTotalEstimatedTargetTime = () => {
-    const totalExactMinutes = models.reduce((sum, item) => {
-      const target = Number(item.target || 0);
-      const effectiveUph = getEffectiveUph(item.uph, item.stages, manpower);
+  const totalExactMinutes = models.reduce((sum, item) => {
+    const target = Number(item.target || 0);
+    const effectiveUph = getEffectiveUph(
+      item.uph,
+      item.stages,
+      manpower
+    );
 
-      if (target > 0 && effectiveUph > 0) {
-        return sum + ((target / effectiveUph) * 60);
-      }
-      return sum;
-    }, 0);
+    if (target > 0 && effectiveUph > 0) {
+      return sum + ((target / effectiveUph) * 60);
+    }
 
-    if (totalExactMinutes === 0) return '';
+    return sum;
+  }, 0);
 
-    const totalMinutes = Math.round(totalExactMinutes * 10) / 10;
-    
-    if (totalMinutes < 60) return `${totalMinutes} min`;
+  if (totalExactMinutes <= 0) return '';
 
-    const hrs = Math.floor(totalMinutes / 60);
-    const mins = Number((totalMinutes - hrs * 60).toFixed(1));
-    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
-  };
+  // SKIP decimal digits instead of rounding
+  const totalMinutes = wholeMinutes(totalExactMinutes);
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hrs = Math.round(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  return mins === 0
+    ? `${hrs} hr`
+    : `${hrs} hr ${mins} min`;
+};
 
   const getTotalActualEstimatedTime = () => {
-    const totalExactMinutes = models.reduce((sum, item) => {
-      const effectiveUph = getEffectiveUph(item.uph, item.stages, manpower);
-      if (effectiveUph <= 0 || item.quantity <= 0) return sum;
-      return sum + ((item.quantity / effectiveUph) * 60);
-    }, 0);
+  const totalExactMinutes = models.reduce((sum, item) => {
+    const effectiveUph = getEffectiveUph(
+      item.uph,
+      item.stages,
+      manpower
+    );
 
-    if (totalExactMinutes === 0) return '0 min';
+    if (effectiveUph <= 0 || item.quantity <= 0) {
+      return sum;
+    }
 
-    const totalMinutes = Math.round(totalExactMinutes * 10) / 10;
-    
-    if (totalMinutes < 60) return `${totalMinutes} min`;
+    return sum + ((item.quantity / effectiveUph) * 60);
+  }, 0);
 
-    const hrs = Math.floor(totalMinutes / 60);
-    const mins = Number((totalMinutes - hrs * 60).toFixed(1));
-    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
-  };
+  if (totalExactMinutes <= 0) return '0 min';
+
+  // SKIP decimal digits instead of rounding
+  const totalMinutes = wholeMinutes(totalExactMinutes);
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hrs = Math.round(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+
+  return mins === 0
+    ? `${hrs} hr`
+    : `${hrs} hr ${mins} min`;
+};
 
   const handleSubmit = async () => {
     const hourNum = parseFloat(hour);
@@ -506,11 +570,15 @@ export default function ProductionForm({
           const targetQty = target ? parseInt(target, 10) : 0;
           const effectiveUph = getEffectiveUph(uph, stages, manpowerNum);
 
-          const targetEstimatedMinutes = effectiveUph > 0 && targetQty > 0
-            ? Math.round(((targetQty / effectiveUph) * 60) * 10) / 10 : null;
+          const targetEstimatedMinutes =
+  effectiveUph > 0 && targetQty > 0
+    ? Math.round((targetQty / effectiveUph) * 60)
+    : null;
 
-          const actualEstimatedMinutes = effectiveUph > 0 && quantity > 0
-            ? Math.round(((quantity / effectiveUph) * 60) * 10) / 10 : null;
+const actualEstimatedMinutes =
+  effectiveUph > 0 && quantity > 0
+    ? Math.round((quantity / effectiveUph) * 60)
+    : null; 
 
           return {
             model,
@@ -560,10 +628,16 @@ export default function ProductionForm({
     }
   };
 
-  const onDateChange = (_event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setDate(selectedDate.toISOString().split('T')[0]);
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    
+    // Safety check: use selectedDate, or fallback if the API passes date first
+    const actualDate = selectedDate || (event instanceof Date ? event : null);
+
+    if (actualDate) {
+      setDate(actualDate.toISOString().split('T')[0]);
     }
   };
 
@@ -689,24 +763,34 @@ export default function ProductionForm({
             </View>
           </View>
 
-          {showDatePicker && <DateTimePicker value={new Date(date)} mode="date" display="default" onChange={onDateChange} />}
+{showDatePicker && (
+  <DateTimePicker 
+    value={new Date(date)} 
+    mode="date" 
+    display="default" 
+    onValueChange={onDateChange}
+    onDismiss={() => setShowDatePicker(false)}
+  />
+)}
           {showTimePicker && (
-            <DateTimePicker
-              value={new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)}
-              mode="time"
-              display="default"
-              onChange={onTimeChange}
-            />
-          )}
+  <DateTimePicker
+    value={new Date(`1970-01-01T${hour.includes('.5') ? `${hour.split('.')[0]}:30` : `${hour}:00`}`)}
+    mode="time"
+    display="default"
+    onValueChange={onTimeChange}
+    onDismiss={() => setShowTimePicker(false)}
+  />
+)}
 
           {modelTimePickerState && (
-            <DateTimePicker
-              value={new Date()}
-              mode="time"
-              display="default"
-              onChange={onModelTimeChange}
-            />
-          )}
+  <DateTimePicker
+    value={new Date()}
+    mode="time"
+    display="default"
+    onValueChange={onModelTimeChange}
+    onDismiss={() => setModelTimePickerState(null)}
+  />
+)}
 
           <View style={styles.formGroup}>
             <Text style={styles.label}>UPH | Model | Target | Actual</Text>
