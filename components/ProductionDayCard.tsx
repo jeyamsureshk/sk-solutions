@@ -391,16 +391,12 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
   </View>
 </View>
 
-            {/* Table Body */}
+{/* Table Body */}
             {records.map((record, index) => {
               const timeRange = getTimeRange(record.hour);
               const items = record.item && Array.isArray(record.item) && record.item.length > 0 
                 ? record.item 
                 : [{ model: '-', quantity: record.units_produced }];
-
-              // 🔥 LOGIC: Check if Actual Total is greater than Plan
-              const isOverPlan = Number(record.units_produced) > Number(record.target_units);
-              const actualColor = isOverPlan ? THEME.markerRed : THEME.markerBlue;
 
               return (
                 <Pressable 
@@ -418,108 +414,114 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                     <Text style={styles.tdHour}>{timeRange.end}</Text>
                   </View>
 
+                  {/* 2 & 3. UPH + MODEL + TIME */}
+                  <View style={{ flex: 3.23 }}>
+                    {items.map((item, idx) => {
+                      const meta = item as {
+                        model?: string;
+                        quantity?: number;
+                        target?: number;
+                        part_number?: string;
+                        uph?: number | null;
+                        target_estimated_time?: string;
+                        actual_estimated_time?: string;
+                        start_time?: string;
+                        end_time?: string;
+                      };
 
-{/* 2 & 3. UPH + MODEL + TIME */}
-<View style={{ flex: 3.23 }}>
-  {items.map((item, idx) => {
-    const meta = item as {
-      model?: string;
-      quantity?: number;
-      target?: number;
-      part_number?: string;
-      uph?: number | null;
-      target_estimated_time?: string;
-      actual_estimated_time?: string;
-      start_time?: string;
-      end_time?: string;
-    };
+                      // 🔥 NEW LOGIC: Evaluate Target vs Actual for THIS specific model.
+                      // Fallback to record totals if the item properties are missing (e.g., dummy rows)
+                      const itemTarget = meta.target !== undefined ? meta.target : record.target_units;
+                      const itemQty = meta.quantity !== undefined ? meta.quantity : record.units_produced;
+                      const isItemBelowPlan = Number(itemQty || 0) < Number(itemTarget || 0);
+                      const itemActualColor = isItemBelowPlan ? THEME.markerRed : THEME.markerBlue;
 
-    return (
-      <View
-        key={idx}
-        style={[
-          styles.subRow,
-          idx !== items.length - 1 && styles.subRowDivider,
-        ]}
-      >
+                      return (
+                        <View
+                          key={idx}
+                          style={[
+                            styles.subRow,
+                            idx !== items.length - 1 && styles.subRowDivider,
+                          ]}
+                        >
 
-        {/* UPH */}
-        <View style={[styles.cell, styles.subCellUPH]}>
-          <Text style={styles.tdUPH}>
-            {meta.uph != null
-              ? Math.round(Number(meta.uph))
-              : '-'}
-          </Text>
-        </View>
+                          {/* UPH */}
+                          <View style={[styles.cell, styles.subCellUPH]}>
+                            <Text style={styles.tdUPH}>
+                              {meta.uph != null
+                                ? Math.round(Number(meta.uph))
+                                : '-'}
+                            </Text>
+                          </View>
 
-        {/* MODEL + START/END TIME */}
-        <View style={[styles.cell, styles.subCellModel]}>
-          <View style={styles.modelTimeRow}>
-            <Text
-              style={styles.tdText}
-              numberOfLines={1}
-            >
-              {meta.model || '-'}
-            </Text>
+                          {/* MODEL + START/END TIME */}
+                          <View style={[styles.cell, styles.subCellModel]}>
+                            <View style={styles.modelTimeRow}>
+                              <Text
+                                style={styles.tdText}
+                                numberOfLines={1}
+                              >
+                                {meta.model || '-'}
+                              </Text>
 
-            {(meta.start_time || meta.end_time) && (
-              <Text style={styles.timeHintText}>
-                {meta.start_time || '?'} - {meta.end_time || '?'}
-              </Text>
-            )}
-          </View>
-        </View>
+                              {(meta.start_time || meta.end_time) && (
+                                <Text style={styles.timeHintText}>
+                                  {meta.start_time || '?'} - {meta.end_time || '?'}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
 
-        {/* TARGET */}
-        <View style={[styles.cell, styles.subCellQty]}>
-          <Text
-            style={[
-              styles.tdTextNumber,
-              {
-                color: '#6B7280',
-                fontWeight: '700',
-              },
-            ]}
-          >
-            {meta.target ?? 0}
-          </Text>
+                          {/* TARGET */}
+                          <View style={[styles.cell, styles.subCellQty]}>
+                            <Text
+                              style={[
+                                styles.tdTextNumber,
+                                {
+                                  color: '#6B7280',
+                                  fontWeight: '700',
+                                },
+                              ]}
+                            >
+                              {meta.target ?? 0}
+                            </Text>
 
-          {!!meta.target_estimated_time && (
-            <Text style={styles.estimateTargetText}>
-              {formatEstimatedTime(
-                meta.target_estimated_time
-              )}
-            </Text>
-          )}
-        </View>
+                            {!!meta.target_estimated_time && (
+                              <Text style={styles.estimateTargetText}>
+                                {formatEstimatedTime(
+                                  meta.target_estimated_time
+                                )}
+                              </Text>
+                            )}
+                          </View>
 
-        {/* ACTUAL */}
-        <View style={[styles.cell, styles.subCellQty]}>
-          <Text
-            style={[
-              styles.tdTextNumber,
-              {
-                color: actualColor,
-                fontWeight: '700',
-              },
-            ]}
-          >
-            {meta.quantity ?? '-'}
-          </Text>
+                          {/* ACTUAL */}
+                          <View style={[styles.cell, styles.subCellQty]}>
+                            <Text
+                              style={[
+                                styles.tdTextNumber,
+                                {
+                                  color: itemActualColor, // Apply the model-specific color here
+                                  fontWeight: '700',
+                                },
+                              ]}
+                            >
+                              {meta.quantity ?? '-'}
+                            </Text>
 
-          {!!meta.actual_estimated_time && (
-            <Text style={styles.estimateActualText}>
-              {formatEstimatedTime(
-                meta.actual_estimated_time
-              )}
-            </Text>
-          )}
-        </View>
+                            {!!meta.actual_estimated_time && (
+                              <Text style={styles.estimateActualText}>
+                                {formatEstimatedTime(
+                                  meta.actual_estimated_time
+                                )}
+                              </Text>
+                            )}
+                          </View>
 
-      </View>
-    );
-  })}
-</View>
+                        </View>
+                      );
+                    })}
+                  </View>
 
                   {/* 5. MAN POWER */}
                   <View style={[styles.cell, styles.colMP]}>
@@ -714,7 +716,6 @@ cardContainer: {
     alignItems: 'flex-start',
     paddingHorizontal: 8,
   },
-  // --- Nested / Sub-Row Layout ---
    // --- Nested / Sub-Row Layout ---
   subRow: {
     flexDirection: 'row',

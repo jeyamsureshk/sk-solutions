@@ -2,7 +2,6 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 
 export default function RootLayout() {
@@ -11,33 +10,12 @@ export default function RootLayout() {
   const router = useRouter();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          setIsAuthenticated(true);
-        } else {
-          const cachedEmail = await AsyncStorage.getItem('userEmail');
-          const cachedPassword = await AsyncStorage.getItem('userPassword');
-          
-          if (cachedEmail && cachedPassword) {
-            const { error } = await supabase.auth.signInWithPassword({
-              email: cachedEmail,
-              password: cachedPassword,
-            });
-            setIsAuthenticated(!error);
-          } else {
-            setIsAuthenticated(false);
-          }
-        }
-      } catch (e) {
-        setIsAuthenticated(false);
-      }
-    };
+    // 1. Check for active session. Supabase handles reading the cached token automatically.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+    });
 
-    checkAuth();
-
+    // 2. Listen for auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session);
     });
@@ -59,8 +37,7 @@ export default function RootLayout() {
     }
   }, [isAuthenticated, segments]);
 
-  // --- THE FIX ---
-  // Check if we are in the "Auth" folder (login/signup)
+  // Check if we are in the "auth" folder (login/signup)
   const inAuthGroup = segments[0] === 'auth';
 
   // 1. If Auth state is unknown (null) -> Show Splash
