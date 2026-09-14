@@ -13,7 +13,8 @@ import {
   Modal,
   StatusBar,
   Easing,
-  Keyboard, 
+  Keyboard,
+  ImageBackground, // Added ImageBackground
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -42,10 +43,16 @@ type DateSeparator = { type: 'date'; date: string };
 type ListItem = Message | DateSeparator;
 
 interface BackgroundOption {
-  type: 'solid' | 'gradient' | 'custom';
+  type: 'solid' | 'gradient' | 'custom' | 'doodle'; // Added doodle type
   color?: string;
   colors?: string[];
 }
+
+const getChatCacheKey = (userId: string, partnerId: string) =>
+  `messages:chat:${[userId, partnerId].sort().join(':')}`;
+
+// WhatsApp classic doodle pattern (Transparent PNG)
+const WA_DOODLE_URL = 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png';
 
 export default function ChatScreen() {
   const { id: partnerId } = useLocalSearchParams<{ id: string }>();
@@ -58,9 +65,9 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
+  // Set default background to the WhatsApp doodle
   const [background, setBackground] = useState<BackgroundOption>({ 
-    type: 'gradient', 
-    colors: ['#e0c3fc', '#8ec5fc'] 
+    type: 'doodle' 
   });
   
   const [modalVisible, setModalVisible] = useState(false);
@@ -72,41 +79,39 @@ export default function ChatScreen() {
   const sendSound = useAudioPlayer(sendSoundFile);
   const receiveSound = useAudioPlayer(receiveSoundFile);
 
-  // --- NEW: Track Keyboard Visibility ---
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
- useEffect(() => {
-  const showSubscription = Keyboard.addListener(
-    Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-    (event) => {
-      setKeyboardVisible(true);
-      setKeyboardHeight(event.endCoordinates.height);
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event) => {
+        setKeyboardVisible(true);
+        setKeyboardHeight(event.endCoordinates.height);
+      }
+    );
+
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isKeyboardVisible) {
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     }
-  );
-
-  const hideSubscription = Keyboard.addListener(
-    Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-    () => {
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-    }
-  );
-
-  return () => {
-    showSubscription.remove();
-    hideSubscription.remove();
-  };
-}, []);
-
-useEffect(() => {
-  if (isKeyboardVisible) {
-    setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  }
-}, [isKeyboardVisible]);
-  // --------------------------------------
+  }, [isKeyboardVisible]);
 
   const showNewMessageNotification = (msgContent: string) => {
     setNotifMessage(msgContent);
@@ -187,6 +192,16 @@ useEffect(() => {
         .eq('sender_id', partnerId)
         .eq('read', false);         
 
+      const chatCacheKey = getChatCacheKey(user.id, partnerId);
+      const cachedMessages = await AsyncStorage.getItem(chatCacheKey);
+      if (cachedMessages && isActive) {
+        try {
+          setMessages(JSON.parse(cachedMessages) as Message[]);
+        } catch {
+          await AsyncStorage.removeItem(chatCacheKey);
+        }
+      }
+
       const { data } = await supabase
         .from('messages')
         .select('*')
@@ -196,6 +211,7 @@ useEffect(() => {
       const fetchedMessages = (data as Message[]) || [];
       if (!isActive) return;
       setMessages(fetchedMessages);
+      await AsyncStorage.setItem(chatCacheKey, JSON.stringify(fetchedMessages));
 
       setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100);
 
@@ -212,6 +228,11 @@ useEffect(() => {
               if (prev.some((m) => m.id === msg.id)) return prev;
               return [...prev, msg];
             });
+            const cached = await AsyncStorage.getItem(chatCacheKey);
+            const cachedMessages = cached ? (JSON.parse(cached) as Message[]) : [];
+            if (!cachedMessages.some((item) => item.id === msg.id)) {
+              await AsyncStorage.setItem(chatCacheKey, JSON.stringify([...cachedMessages, msg]));
+            }
 
             if (msg.sender_id === partnerId) {
               playSound(receiveSound);
@@ -236,6 +257,12 @@ useEffect(() => {
               const updatedMsg = payload.new as Message;
               setMessages((prev) => 
                 prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
+              );
+              const cached = await AsyncStorage.getItem(chatCacheKey);
+              const cachedMessages = cached ? (JSON.parse(cached) as Message[]) : [];
+              await AsyncStorage.setItem(
+                chatCacheKey,
+                JSON.stringify(cachedMessages.map((message) => message.id === updatedMsg.id ? updatedMsg : message))
               );
             }
         )
@@ -272,10 +299,8 @@ useEffect(() => {
       created_at: new Date().toISOString(),
     };
 
-    // 1. Setup Animation
     animMap.current[optimistic.id] = new Animated.Value(0);
     
-    // 2. Update UI Immediately
     setMessages((prev) => [...prev, optimistic]);
     setText('');
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
@@ -286,13 +311,10 @@ useEffect(() => {
       useNativeDriver: true 
     }).start();
 
-    // 3. Play the sound using expo-audio (using replay handles rapid-fire sending)
     playSound(sendSound);
 
-    // 4. Background Database Insert
     const { error } = await supabase.from('messages').insert(optimistic as MessageInsert);
     if (error) {
-      // Rollback on failure
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       Alert.alert('Error', 'Failed to send message');
     }
@@ -326,14 +348,12 @@ useEffect(() => {
   };
 
   const backgroundOptions: BackgroundOption[] = [
+    { type: 'doodle' },
     { type: 'custom' },
+    { type: 'solid', color: '#efe7de' },
     { type: 'gradient', colors: ['#e0c3fc', '#8ec5fc'] },
     { type: 'gradient', colors: ['#ffff00', '#ffffff'] },
     { type: 'solid', color: '#1a1a1a' },
-    { type: 'gradient', colors: ['#ff0066', '#ffffff'] },
-    { type: 'gradient', colors: ['#ff0000', '#ffffff'] },
-    { type: 'gradient', colors: ['#0000ff', '#ffffff'] },
-    { type: 'gradient', colors: ['#84fab0', '#8fd3f4'] },
   ];
 
   const renderDateSeparator = (dateStr: string) => (
@@ -347,6 +367,13 @@ useEffect(() => {
     const isSelected = selectedIds.includes(item.id);
     if (!animMap.current[item.id]) animMap.current[item.id] = new Animated.Value(1);
 
+    // WhatsApp exact bubble colors
+    const backgroundColor = isSelected 
+      ? 'rgba(252, 165, 165, 0.8)' 
+      : isMine 
+        ? '#d9fdd3' 
+        : '#ffffff';
+
     return (
       <Animated.View style={[styles.messageRow, isMine ? styles.rowRight : styles.rowLeft, { opacity: animMap.current[item.id] }]}>
         <TouchableOpacity
@@ -355,35 +382,32 @@ useEffect(() => {
           activeOpacity={0.8}
           style={{ maxWidth: '80%' }}
         >
-          <LinearGradient
-            colors={
-                    isSelected ? (['#fca5a5', '#f87171'] as const)
-                      : isMine ? (['#d1faef', '#d1faff'] as const)
-                      : (['#d1fae5', '#d1faa5'] as const)
-                  }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.bubble, isMine ? styles.bubbleRight : styles.bubbleLeft, isSelected && styles.bubbleSelected]}
+          <View
+            style={[
+              styles.bubble, 
+              isMine ? styles.bubbleRight : styles.bubbleLeft, 
+              { backgroundColor }
+            ]}
           >
             <View style={styles.bubbleContent}>
-              <Text style={[styles.messageText, isMine || isSelected ? styles.textLight : styles.textDark]}>
+              <Text style={styles.messageText}>
                 {item.content + "  "}
               </Text>
               <View style={styles.metaContainer}>
-                <Text style={[styles.timeText, isMine || isSelected ? styles.timeLight : styles.timeDark]}>
+                <Text style={styles.timeText}>
                   {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) + " "}   
                 </Text>
                 {isMine && (
                   <Ionicons
-                    name={item.read ? 'checkmark-done-outline' : 'checkmark-outline'}
-                    size={14}
-                    color="red"
-                    style={{ marginLeft: 4 }}
+                    name={item.read ? 'checkmark-done' : 'checkmark'} // Switched to WhatsApp style checkmarks
+                    size={15}
+                    color={item.read ? "red" : "#8696a0"} // WhatsApp blue ticks vs grey ticks
+                    style={{ marginLeft: 2 }}
                   />
                 )}
               </View>
             </View>
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
       </Animated.View>
     );
@@ -398,7 +422,16 @@ useEffect(() => {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      {background.type === 'gradient' && background.colors ? (
+      {/* Background Rendering Logic */}
+      {background.type === 'doodle' ? (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#efe7de' }]}>
+          <ImageBackground 
+            source={{ uri: WA_DOODLE_URL }} 
+            style={[StyleSheet.absoluteFillObject, { opacity: 0.4 }]} 
+            resizeMode="repeat" 
+          />
+        </View>
+      ) : background.type === 'gradient' && background.colors ? (
         <LinearGradient colors={background.colors} style={StyleSheet.absoluteFillObject} />
       ) : (
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: background.color || '#fff' }]} />
@@ -407,7 +440,7 @@ useEffect(() => {
       {/* Header */}
       <View style={[styles.headerContainer, { paddingTop: insets.top }]}>
         <LinearGradient
-          colors={['rgba(0,0,0,0.6)', 'transparent']}
+          colors={['#075e54', '#128c7e']}
           style={StyleSheet.absoluteFillObject}
           pointerEvents="none"
         />
@@ -417,11 +450,11 @@ useEffect(() => {
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>{partnerName}</Text>
-            <Text style={styles.headerSubtitle}>Online</Text>
+            <Text style={styles.headerSubtitle}>online</Text>
           </View>
           {selectedIds.length > 0 ? (
             <TouchableOpacity onPress={handleDeleteSelected} style={styles.headerButton}>
-              <Ionicons name="trash-outline" size={24} color="#ff6b6b" />
+              <Ionicons name="trash-outline" size={24} color="#fff" />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.headerButton}>
@@ -455,47 +488,40 @@ useEffect(() => {
           data={listItems}
           keyExtractor={(item) => ('type' in item ? item.date : (item as Message).id)}
           renderItem={renderItem}
-          contentContainerStyle={[styles.listContent, { paddingBottom: 20 }]}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 15 }]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           showsVerticalScrollIndicator={false}
           keyboardDismissMode="interactive"
         />
 
-
-        {/* INPUT CONTAINER FIX: Conditional Padding */}
+        {/* WhatsApp Style Input Container */}
         <View
-  style={[
-    styles.inputContainer,
-    {
-      marginBottom:
-        Platform.OS === 'android'
-          ? keyboardHeight
-          : 0,
-
-      paddingBottom:
-        isKeyboardVisible
-          ? 10
-          : Math.max(insets.bottom, 15),
-    },
-  ]}
->
+          style={[
+            styles.inputContainer,
+            {
+              marginBottom: Platform.OS === 'android' ? keyboardHeight : 0,
+              paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom, 10),
+            },
+          ]}
+        >
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.textInput}
               value={text}
               onChangeText={setText}
-              placeholder="Message..."
-              placeholderTextColor="#9ca3af"
+              placeholder="Message"
+              placeholderTextColor="#8696a0"
               multiline
             />
-            <TouchableOpacity 
-              onPress={handleSend}
-              disabled={!text.trim()}
-              style={[styles.sendButton, !text.trim() && styles.sendButtonDisabled]}
-            >
-              <Ionicons name="send" size={20} color="#fff" style={{ marginLeft: 2 }} />
-            </TouchableOpacity>
           </View>
+          
+          <TouchableOpacity 
+            onPress={handleSend}
+            disabled={!text.trim()}
+            style={[styles.sendButton, !text.trim() && styles.sendButtonDisabled]}
+          >
+            <Ionicons name="send" size={20} color="#fff" style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -504,10 +530,6 @@ useEffect(() => {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setModalVisible(false)}>
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalHeader}>Appearance</Text>
-            <View style={styles.colorInputs}>
-               <TextInput value={customColor1} onChangeText={setCustomColor1} style={styles.hexInput} placeholder="#Color1" />
-               <TextInput value={customColor2} onChangeText={setCustomColor2} style={styles.hexInput} placeholder="#Color2" />
-            </View>
             <FlatList
               data={backgroundOptions}
               numColumns={4}
@@ -522,12 +544,16 @@ useEffect(() => {
                     setModalVisible(false);
                   }}
                 >
-                  {item.type === 'gradient' ? (
+                  {item.type === 'doodle' ? (
+                    <View style={[styles.swatch, { backgroundColor: '#efe7de', borderWidth: 1, borderColor: '#ddd' }]}>
+                       <Ionicons name="logo-whatsapp" size={24} color="#128c7e" />
+                    </View>
+                  ) : item.type === 'gradient' ? (
                      <LinearGradient colors={item.colors!} style={styles.swatch} />
                   ) : item.type === 'custom' ? (
                     <LinearGradient colors={[customColor1, customColor2]} style={styles.swatch}><Ionicons name="add" size={20} color="#fff"/></LinearGradient>
                   ) : (
-                    <View style={[styles.swatch, { backgroundColor: item.color }]} />
+                    <View style={[styles.swatch, { backgroundColor: item.color, borderWidth: 1, borderColor: '#ddd' }]} />
                   )}
                 </TouchableOpacity>
               )}
@@ -542,10 +568,9 @@ useEffect(() => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#efe7de',
   },
   
-  // Custom Notification Banner
   notificationBanner: {
     position: 'absolute',
     left: 15,
@@ -558,8 +583,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
   },
   notificationContent: {
     flexDirection: 'row',
@@ -581,59 +604,58 @@ const styles = StyleSheet.create({
   // Header
   headerContainer: {
     width: '100%',
-    zIndex: 10,
+    zIndex: 10,    backgroundColor: 'rgba(200,67,95,1)',
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    // Removed height: 10 to fix the clipping issue
+    paddingHorizontal: 10,
+    paddingVertical: 12,
   },
   headerButton: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   headerTitleContainer: {
     flex: 1,
-    marginLeft: 15,
+    marginLeft: 5,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 19,
+    fontWeight: '600',
     color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.8)',
   },
 
-  // List
   listContent: {
     paddingHorizontal: 12,
     paddingTop: 10,
   },
   dateSeparator: {
     alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginVertical: 16,
+    paddingVertical: 6,
+    marginVertical: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   },
   dateSeparatorText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
+    color: '#54656f',
+    fontSize: 12,
+    fontWeight: '500',
   },
 
-  // Messages
+  // Messages (WhatsApp Style)
   messageRow: {
-    marginBottom: 8,
+    marginBottom: 4,
     width: '100%',
   },
   rowLeft: {
@@ -643,95 +665,97 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   bubble: {
-    borderRadius: 20,
-    paddingTop: 14,
-    paddingBottom: 8,
-    paddingHorizontal: 14,
+    borderRadius: 14,
+    paddingTop: 6,
+    paddingBottom: 6,
+    paddingHorizontal: 10,
     minWidth: 80,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 1,
-    elevation: 2,
+    elevation: 1,
   },
+  // Creates the classic WhatsApp sharp corner tail effect
   bubbleLeft: {
-    borderBottomLeftRadius: 4,
+    borderTopLeftRadius: 0, 
+    marginLeft: 5,
   },
   bubbleRight: {
-    borderBottomRightRadius: 4,
-  },
-  bubbleSelected: {
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    borderTopRightRadius: 0,
+    marginRight: 5,
   },
   
-  // Smart Content Layout
- bubbleContent: {
+  bubbleContent: {
     flexDirection: 'column',
     alignItems: 'flex-start', 
   },
-  
   metaContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-end',
-    marginTop: 4,
+    marginTop: -2, 
   },
   messageText: {
-    fontSize: 16,
+    fontSize: 15.5,
     lineHeight: 22,
-    marginRight: 6,
+    color: '#111b21',
+    marginRight: 20, 
     paddingBottom: 2,
   },
-  
   timeText: {
-    fontSize: 10,
+    fontSize: 11,
+    color: '#667781',
   },
-  
-  // Colors
-  textLight: { color: '#444' },
-  textDark: { color: '#1f2937' },
-  timeLight: { color: 'rgba(0,0,0,0.45)' },
-  timeDark: { color: 'rgba(0,0,0,0.45)' },
 
-  // Input
+  // WhatsApp Style Input
   inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
     paddingHorizontal: 10,
-    paddingTop: 8,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    paddingTop: 5,
+    backgroundColor: 'transparent',
   },
   inputWrapper: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
     backgroundColor: '#fff',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    padding: 6,
+    minHeight: 45,
+    maxHeight: 120,
+    marginRight: 8, // Space between input and send button
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   },
   textInput: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
     fontSize: 16,
-    color: '#1f2937',
+    color: '#111b21',
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2563eb',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f00', // WhatsApp send button color
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   },
   sendButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: '#f00', 
+    opacity: 0.5,
   },
 
   // Modal
@@ -746,7 +770,6 @@ borderBottomLeftRadius: 24,
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: 24,
-    elevation: 10,
   },
   modalHeader: {
     fontSize: 20,
@@ -754,19 +777,6 @@ borderBottomLeftRadius: 24,
     color: '#1f2937',
     marginBottom: 20,
     textAlign: 'center',
-  },
-  colorInputs: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  hexInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    padding: 10,
-    fontSize: 14,
   },
   swatchContainer: {
     flex: 1,

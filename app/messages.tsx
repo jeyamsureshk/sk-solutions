@@ -8,46 +8,14 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback } from 'react';
 import { useOperators } from '@/hooks/useOperators';
 import { useProfiles } from '@/hooks/useProfiles';
 import { useUnreadCounts } from '@/hooks/useUnreadCounts';
+import { useLastMessages } from '@/hooks/useLastMessages';
 import { supabase } from '@/lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
-
-// Custom hook to fetch last messages
-function useLastMessages(userId?: string) {
-  const [lastMessages, setLastMessages] = useState<Record<string, { content: string; created_at: string }>>({});
-
-  useEffect(() => {
-    if (!userId) return;
-
-    const fetchLastMessages = async () => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('id, content, sender_id, receiver_id, created_at')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error(error);
-        return;
-      }
-
-      const map: Record<string, { content: string; created_at: string }> = {};
-      data.forEach(msg => {
-        const otherId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
-        if (!map[otherId]) {
-          map[otherId] = { content: msg.content, created_at: msg.created_at };
-        }
-      });
-      setLastMessages(map);
-    };
-
-    fetchLastMessages();
-  }, [userId]);
-
-  return { lastMessages };
-}
 
 export default function MessagesIndex() {
   const router = useRouter();
@@ -56,8 +24,8 @@ export default function MessagesIndex() {
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
-  const { unreadCounts } = useUnreadCounts(currentUserId || undefined);
-  const { lastMessages } = useLastMessages(currentUserId || undefined);
+  const { unreadCounts, refetch: refetchUnreadCounts } = useUnreadCounts(currentUserId || undefined);
+  const { lastMessages, refetch: refetchLastMessages } = useLastMessages(currentUserId || undefined);
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -66,11 +34,19 @@ export default function MessagesIndex() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
-        setCurrentUserEmail(user.email);
+        setCurrentUserEmail(user.email ?? null);
       }
     };
     fetchUser();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!currentUserId) return;
+      refetchUnreadCounts();
+      refetchLastMessages();
+    }, [currentUserId, refetchUnreadCounts, refetchLastMessages])
+  );
 
   const validOperators = operators.filter(op =>
     profiles.some(p => p.email === op.email) &&
