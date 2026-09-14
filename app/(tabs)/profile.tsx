@@ -259,9 +259,10 @@ export default function ProfileScreen() {
   useEffect(() => { fetchProfile(); }, []);
   useEffect(() => { if(profile?.id) fetchPayrollDocuments(); }, [profile?.id]);
 
-  const handleSaveSalary = async () => {
+const handleSaveSalary = async () => {
     if (!operator?.id) return;
     try {
+      // 1. Update the database first
       const { error } = await supabase
         .from('operators')
         .update({
@@ -270,10 +271,41 @@ export default function ProfileScreen() {
           updated: new Date().toISOString()
         })
         .eq('id', operator.id);
+      
       if (error) throw error;
-      Alert.alert('Success', 'Profile updated with current selections.');
+
+      // 2. Trigger the Salary Update Email
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user?.email) {
+          const userName = operator?.name || profile?.full_name || 'System User';
+          
+          // Note: Make sure the function name matches your deployed Edge Function name
+          await supabase.functions.invoke('send-salary-email', {
+            body: {
+              // Sending the exact payload structure your Deno Edge Function requires
+              record: {
+                email: user.email,
+                employee_name: userName,
+                gross_salary: Number(salaryData.userGrossInput),
+                net_salary: salaryCalculations.netSalary,
+                ot_hours: salaryCalculations.earnings.otHours
+              }
+            }
+          });
+        }
+      } catch (emailError) {
+        console.warn('Salary email trigger failed:', emailError);
+      }
+
+      // 3. Close the editing view and alert the user
+      Alert.alert('Success', 'Profile updated and email notification sent.');
       setIsEditingSalary(false);
-    } catch (error: any) { Alert.alert('Update Failed', error.message); }
+
+    } catch (error: any) { 
+      Alert.alert('Update Failed', error.message); 
+    }
   };
   // --- Upload PDF Logic ---
   const handleUploadPayrollPDF = async () => {
