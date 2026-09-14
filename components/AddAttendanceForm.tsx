@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
@@ -7,6 +7,7 @@ import { useAttendanceRecords } from '@/hooks/useAttendanceRecords';
 import { AttendanceRecordInsert } from '@/types/database';
 import { COLORS } from '@/constants/theme';
 import { useCurrentOperatorId } from '@/hooks/useCurrentOperatorId';
+import { supabase } from '@/lib/supabase'; // <-- Import Supabase client
 
 interface Props {
   operatorId?: number;
@@ -104,8 +105,7 @@ export default function AddAttendanceForm({ operatorId, date, onSuccess }: Props
       return;
     }
 
-    // 2. NEW: Validation for Hours vs. Status
-    // If status is NOT 'absent' or 'leave', hours_worked must be greater than 0
+    // 2. Validation for Hours vs. Status
     const needsHours = formData.status !== 'absent' && formData.status !== 'leave';
     
     if (needsHours && (!formData.hours_worked || formData.hours_worked <= 0)) {
@@ -121,6 +121,22 @@ export default function AddAttendanceForm({ operatorId, date, onSuccess }: Props
     setSubmitting(false);
 
     if (res.success) {
+      // --- NEW: Trigger Email Notification in the background ---
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user?.email) {
+          supabase.functions.invoke('send-attendance-email', {
+            body: { 
+              email: user.email, 
+              date: formatDisplayDate(formData.date), 
+              status: formData.status.toUpperCase(), // Make status look nicer in email
+              shift: 'General' 
+            },
+          }).then(({ error }) => {
+            if (error) console.warn("Email failed to trigger:", error);
+          });
+        }
+      });
+
       Alert.alert('Saved', 'Attendance entry created.');
       onSuccess?.();
       router.back();
@@ -136,7 +152,6 @@ export default function AddAttendanceForm({ operatorId, date, onSuccess }: Props
       <View style={styles.group}>
         <Text style={styles.label}>Date</Text>
         <TouchableOpacity style={styles.timeBtn} onPress={() => setShowDatePicker(true)}>
-          {/* Apply the formatting helper here */}
           <Text style={styles.timeVal}>{formatDisplayDate(formData.date)}</Text>
         </TouchableOpacity>
       </View>
