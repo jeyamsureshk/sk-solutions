@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { ProductionRecord } from '@/types/database';
-import { Edit2, Trash2, Share2 } from 'lucide-react-native';
+import { Edit2, Trash2, Share2,CheckCheck, Check } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 
 // --- New Imports for Sharing ---
@@ -69,6 +69,30 @@ function ProductionDayCard({
 
   const cardRef = useRef<View>(null);
 
+// ✨ Pre-calculate total targets/actuals and find the final hour for each model
+  const modelStats = useMemo(() => {
+    const stats: Record<string, { target: number; actual: number; lastRecordId: string }> = {};
+    
+    records.forEach(record => {
+      const items = record.item && Array.isArray(record.item) && record.item.length > 0 
+        ? record.item 
+        : [{ model: '-', quantity: record.units_produced, target: record.target_units }];
+        
+      items.forEach((item: any) => {
+        const modelName = item.model || '-';
+        if (!stats[modelName]) {
+          stats[modelName] = { target: 0, actual: 0, lastRecordId: record.id };
+        }
+        stats[modelName].target += Number(item.target || 0);
+        stats[modelName].actual += Number(item.quantity || 0);
+        // Continually updates, so it will always hold the ID of the final hour this model appears
+        stats[modelName].lastRecordId = record.id; 
+      });
+    });
+    return stats;
+  }, [records]);
+
+  
 // ✨ Delete Entire Day Logic
   const handleDeleteDay = () => {
     // Only allow if they have permission to modify these records
@@ -472,7 +496,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
 
                   {/* 2 & 3. UPH + MODEL + TIME */}
                   <View style={{ flex: 3.23 }}>
-                    {items.map((item, idx) => {
+{items.map((item, idx) => {
                       const meta = item as {
                         model?: string;
                         quantity?: number;
@@ -485,12 +509,17 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                         end_time?: string;
                       };
 
-                      // 🔥 NEW LOGIC: Evaluate Target vs Actual for THIS specific model.
-                      // Fallback to record totals if the item properties are missing (e.g., dummy rows)
+                      const itemModelName = meta.model || '-';
                       const itemTarget = meta.target !== undefined ? meta.target : record.target_units;
                       const itemQty = meta.quantity !== undefined ? meta.quantity : record.units_produced;
                       const isItemBelowPlan = Number(itemQty || 0) < Number(itemTarget || 0);
                       const itemActualColor = isItemBelowPlan ? THEME.markerRed : THEME.markerBlue;
+
+                      // 🔥 LOGIC: Only show double tick on the FINAL hour of this model if TOTAL target is met
+                      const stats = modelStats[itemModelName];
+                      const isFinalHourForModel = stats?.lastRecordId === record.id;
+                      const isTotalTargetMet = stats && stats.target > 0 && stats.actual >= stats.target;
+                      const showTick = isFinalHourForModel && isTotalTargetMet;
 
                       return (
                         <View
@@ -517,7 +546,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                                 style={styles.tdText}
                                 numberOfLines={1}
                               >
-                                {meta.model || '-'}
+                                {itemModelName}
                               </Text>
 
                               {(meta.start_time || meta.end_time) && (
@@ -525,6 +554,8 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                                   {meta.start_time || '?'} - {meta.end_time || '?'}
                                 </Text>
                               )}
+                              
+                              {/* The tick mark was removed from here! */}
                             </View>
                           </View>
 
@@ -551,19 +582,29 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                             )}
                           </View>
 
-                          {/* ACTUAL */}
+{/* ACTUAL */}
                           <View style={[styles.cell, styles.subCellQty]}>
-                            <Text
-                              style={[
-                                styles.tdTextNumber,
-                                {
-                                  color: itemActualColor, // Apply the model-specific color here
-                                  fontWeight: '700',
-                                },
-                              ]}
-                            >
-                              {meta.quantity ?? '-'}
-                            </Text>
+                            <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                              <Text
+                                style={[
+                                  styles.tdTextNumber,
+                                  {
+                                    color: itemActualColor, 
+                                    fontWeight: '700',
+                                    textAlign: 'center',
+                                  },
+                                ]}
+                              >
+                                {meta.quantity ?? '-'}
+                              </Text>
+
+                              {/* ✨ Tick mark absolutely positioned so it doesn't push the text off-center */}
+                              {showTick && (
+                                <View style={{ position: 'absolute', right: -5 }}>
+                                  <Check size={14} color="#059669" strokeWidth={3} />
+                                </View>
+                              )}
+                            </View>
 
                             {!!meta.actual_estimated_time && (
                               <Text style={styles.estimateActualText}>

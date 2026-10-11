@@ -447,7 +447,7 @@ export default function ProductionPlanScreen() {
             const modelColor = MODEL_COLORS[index % MODEL_COLORS.length]; // Assigned Color
             
             return (
-            <View key={index} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: modelColor }]}>
+            <View key={index} style={[styles.card, { borderLeftWidth: 2, borderLeftColor: modelColor }]}>
               <View style={styles.modelRow}>
                 <View style={{ flex: 2.5, marginRight: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
