@@ -41,12 +41,11 @@ export default function SummaryCard({
   const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(null);
   const [expandedTeams, setExpandedTeams] = useState<Set<number>>(new Set());
   
-  const [activeTab, setActiveTab] = useState<'summary' | 'input' | 'plan'>('summary');
+const [activeTab, setActiveTab] = useState<'summary' | 'plan'>('summary');
   
   const [etaPickerModel, setEtaPickerModel] = useState<string | null>(null);
   const teamRefs = useRef<Array<View | null>>([]);
 
-  const { fqcInputs, saving, updateInput, saveFqcInputs } = useFqcInput(selectedDate, period);
   const { planData, savingPlan, updatePlan, savePlanData } = usePlanInput(selectedDate, period);
 
   // 🔥 FIX: Moved the loading and empty data check ABOVE the calculations
@@ -70,15 +69,6 @@ export default function SummaryCard({
     chartData?.filter(point => point.team === team) ?? [];
     
   const efficiencyColor = getEfficiencyColor(data.averageEfficiency);
-
-  const handleSave = async () => {
-    const result = await saveFqcInputs();
-    if (result.success) {
-      Alert.alert('Saved', result.message);
-    } else {
-      Alert.alert('Error', result.message);
-    }
-  };
 
   const handleSavePlan = async () => {
     const result = await savePlanData();
@@ -241,17 +231,7 @@ const formatDateDisplay = (date: Date) => {
                 Summary
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.teamTab,
-                activeTab === 'input' && styles.teamTabActive,
-              ]}
-              onPress={() => setActiveTab('input')}
-            >
-              <Text style={[styles.teamTabText, activeTab === 'input' && styles.teamTabTextActive]}>
-                Input vs Actual
-              </Text>
-            </TouchableOpacity>
+           
             <TouchableOpacity
               style={[
                 styles.teamTab,
@@ -390,77 +370,7 @@ const formatDateDisplay = (date: Date) => {
                   </>
                 )}
                 
-                {/* === INPUT VS ACTUAL TAB === */}
-                {activeTab === 'input' && (
-                  <>
-                    <View style={styles.teamStats}>
-                      <Text style={styles.teamStat}>
-                        Completed: {teamSummary.unitsProduced.toLocaleString()}
-                      </Text>
-                      <Text style={styles.teamStat}>
-                        Target: {teamSummary.targetUnits.toLocaleString()}
-                      </Text>
-                      <Text style={styles.teamStat}>
-                        Efficiency:{' '}
-                        <Text style={{ color: getEfficiencyColor(teamSummary.efficiency) }}>
-                          {teamSummary.efficiency.toFixed(1)}%
-                        </Text>
-                      </Text>
-                    </View>
-                    {isExpanded && teamSummary.modelSummaries && teamSummary.modelSummaries.length > 0 && (
-                      <View style={styles.modelList}>
-                        <View style={styles.tableHeader}>
-                          <Text style={styles.headerText}>Model Name</Text>
-                          <Text style={styles.headerText}>FQC Input</Text>
-                          <Text style={styles.headerText}>Packed</Text>
-                          <Text style={styles.headerText}>Pending</Text>
-                          <Text style={styles.headerText}>Status</Text>
-                        </View>
-                       {teamSummary.modelSummaries
-  .filter(model => model.totalQuantity > 0)
-  .slice()
-  .sort((a, b) => a.model.localeCompare(b.model))
-  .map((model, modelIndex) => {
-                            const key = model.model;
-                            const rawInputValue = fqcInputs[key];
-                            const fqcInputNumber = typeof rawInputValue === 'number' ? rawInputValue : parseInt(String(rawInputValue)) || 0;
-                            const packed = model.totalQuantity;
-                            const pending = fqcInputNumber - packed;
-                            const status = pending === 0 ? 'Completed' : 'Pending';
-                            
-                            return (
-                              <View key={modelIndex} style={styles.modelItem}>
-                                <Text style={styles.modelNameCell}>{model.model}</Text>
-                                <View style={styles.tableCell}>
-                                  {period === 'day' ? (
-                                    <TextInput
-                                      style={styles.fqcInput}
-                                      keyboardType="numeric"
-                                      value={rawInputValue !== undefined ? String(rawInputValue) : "0"}
-                                      onChangeText={(text) => {
-                                        const newValue = text === '' ? '' : parseInt(text.replace(/[^0-9]/g, '')) || 0;
-                                        updateInput(key, newValue);
-                                      }}
-                                      placeholder="0"
-                                    />
-                                  ) : (
-                                    <Text style={[styles.tableCell, { paddingVertical: 4 }]}>
-                                      {fqcInputNumber.toLocaleString()}
-                                    </Text>
-                                  )}
-                                </View>
-                                <Text style={styles.tableCell}>{packed.toLocaleString()}</Text>
-                                <Text style={styles.tableCell}>{pending.toLocaleString()}</Text>
-                                <Text style={[styles.tableCell, { color: status === 'Completed' ? '#10b981' : '#ef4444' }]}>
-                                  {status}
-                                </Text>
-                              </View>
-                            );
-                          })}
-                      </View>
-                    )}
-                  </>
-                )}
+
 {activeTab === 'plan' && isExpanded && (
   <PlanVsActualScreen
     teamSummary={teamSummary}
@@ -476,20 +386,8 @@ const formatDateDisplay = (date: Date) => {
 )}
               </View>
             );
-          })}
-          
+          })}   
           {/* Action Buttons */}
-          {activeTab === 'input' && period === 'day' && (
-            <TouchableOpacity
-              style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              <Text style={styles.saveButtonText}>
-                {saving ? 'Saving...' : 'Save FQC Inputs'}
-              </Text>
-            </TouchableOpacity>
-          )}
 
           {activeTab === 'plan' && period === 'day' && (
             <TouchableOpacity 

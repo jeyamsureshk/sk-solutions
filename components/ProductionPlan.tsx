@@ -1,0 +1,507 @@
+import { router } from 'expo-router';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Trash2 } from 'lucide-react-native';
+import { supabase } from '@/lib/supabase';
+import { useItems, type Item } from '@/hooks/useItems';
+import { useCycleTime } from '@/hooks/useCycleTime';
+import { ProductionRecordInsert } from '@/types/database';
+
+
+interface ModelEntry {
+  model: string;
+  part_number: string;
+  uph: number | null;
+  target: string;
+  stages: number | null;
+}
+
+// Fixed Hourly Slots Based on your shift requirements
+// Fixed Hourly Slots with explicit Planned Downtime (Breaks)
+const SHIFT_SLOTS = [
+  { hour: 9, start: '08:30', end: '09:00', minutes: 30, plan_dt: 0, remarks: '' },
+  { hour: 10, start: '09:00', end: '10:00', minutes: 60, plan_dt: 0, remarks: '' },
+  { hour: 11, start: '10:00', end: '11:00', minutes: 45, plan_dt: 15, remarks: 'Tea Break 15 Mins' },
+  { hour: 12, start: '11:00', end: '12:00', minutes: 60, plan_dt: 0, remarks: '' },
+  { hour: 13, start: '12:00', end: '13:00', minutes: 35, plan_dt: 25, remarks: 'Lunch Break 25 Mins' },
+  { hour: 14, start: '13:00', end: '14:00', minutes: 60, plan_dt: 0, remarks: '' },
+  { hour: 15, start: '14:00', end: '15:00', minutes: 60, plan_dt: 0, remarks: '' },
+  { hour: 16, start: '15:00', end: '16:00', minutes: 45, plan_dt: 15, remarks: 'Tea Break 15 Mins' },
+  { hour: 17, start: '16:00', end: '17:00', minutes: 60, plan_dt: 0, remarks: '' },
+  { hour: 18, start: '17:00', end: '18:00', minutes: 60, plan_dt: 0, remarks: '' },
+  { hour: 19, start: '18:00', end: '19:00', minutes: 50, plan_dt: 10, remarks: 'Tea Break 10 Mins' },
+  { hour: 20, start: '19:00', end: '20:00', minutes: 60, plan_dt: 0, remarks: '' },
+];
+
+const getEffectiveUph = (uph: number | null | undefined, stages: number | null | undefined, manpower: string | number) => {
+  const u = Number(uph || 0);
+  const s = Number(stages || 1) || 1;
+  const mp = Number(manpower || 1) || 1;
+  if (u <= 0) return 0;
+  return stages && stages > 0 ? Math.floor(u / s) * mp : u;
+};
+
+const addMinutesToTime = (time: string, minutes: number) => {
+  if (!time || !Number.isFinite(minutes)) return time;
+  const [hours, mins] = time.split(':').map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(mins)) return time;
+  const totalMinutes = (hours * 60 + mins + Math.max(0, Math.round(minutes))) % (24 * 60);
+  const finalHours = Math.floor(totalMinutes / 60);
+  const finalMinutes = totalMinutes % 60;
+  return `${finalHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
+};
+
+export default function ProductionPlanScreen() {
+  const today = new Date().toISOString().split('T')[0];
+
+  const [date, setDate] = useState(today);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [manpower, setManpower] = useState('');
+  
+  const [operatorId, setOperatorId] = useState('');
+  const [operatorName, setOperatorName] = useState('');
+  const [team, setTeam] = useState('');
+
+  const [models, setModels] = useState<ModelEntry[]>([
+    { model: '', part_number: '', uph: null, target: '', stages: null }
+  ]);
+
+  const { items } = useItems();
+  const { getCycleTimeRecordByPartNumber } = useCycleTime();
+  
+  const [dropdownVisible, setDropdownVisible] = useState(false);
+  const [filteredItems, setFilteredItems] = useState<Item[]>([]);
+  const [currentModelIndex, setCurrentModelIndex] = useState<number | null>(null);
+
+  // Load User Data
+  useEffect(() => {
+    const loadUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from('profiles').select('operator_id').eq('id', user.id).maybeSingle();
+      if (profile?.operator_id) {
+        const { data: operator } = await supabase.from('operators').select('name, team').eq('id', profile.operator_id).maybeSingle();
+        if (operator) {
+          setOperatorId(profile.operator_id.toString());
+          setOperatorName(operator.name);
+          setTeam(operator.team);
+        }
+      }
+    };
+    loadUser();
+  }, []);
+
+  const fetchUphForPartNumber = async (partNumber: string, index: number) => {
+    if (!partNumber) return;
+    try {
+      const result = await getCycleTimeRecordByPartNumber(partNumber, team);
+      if (result.success && result.data) {
+        const record = Array.isArray(result.data) ? result.data[0] : result.data;
+        const uphValue = parseFloat(record?.cycles_per_hour);
+        const stagesCount = record.stages ? record.stages.length : 1;
+
+        setModels((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], uph: uphValue, stages: stagesCount };
+          return updated;
+        });
+
+        if (stagesCount > 0 && !manpower) {
+          setManpower(stagesCount.toString());
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch UPH:', error);
+    }
+  };
+
+  // Calculates the automated hourly distribution based on the shifts
+  const hourlyPlan = useMemo(() => {
+    const plans = SHIFT_SLOTS.map(slot => ({
+      ...slot,
+      totalTarget: 0,
+      items: [] as any[],
+    }));
+
+    let slotIdx = 0;
+    let slotMinsRem = SHIFT_SLOTS[0]?.minutes || 0;
+    let slotStartTime = SHIFT_SLOTS[0]?.start || '';
+
+    models.forEach((mod) => {
+      let remainingTarget = parseInt(mod.target || '0', 10);
+      const effUph = getEffectiveUph(mod.uph, mod.stages, manpower);
+
+      if (remainingTarget <= 0 || effUph <= 0) return;
+
+      while (remainingTarget > 0 && slotIdx < SHIFT_SLOTS.length) {
+        const slot = SHIFT_SLOTS[slotIdx];
+        const maxCapacityInSlot = (effUph / 60) * slotMinsRem;
+        let qtyToAssign = 0;
+        let timeTaken = 0;
+
+        if (remainingTarget <= maxCapacityInSlot) {
+          qtyToAssign = remainingTarget;
+          timeTaken = (qtyToAssign / effUph) * 60;
+        } else {
+          qtyToAssign = Math.floor(maxCapacityInSlot);
+          if (qtyToAssign === 0) qtyToAssign = 1; // Force progress if math gets stuck
+          timeTaken = (qtyToAssign / effUph) * 60;
+        }
+
+        const itemStartTime = slotStartTime;
+        const itemEndTime = addMinutesToTime(itemStartTime, timeTaken);
+
+        if (qtyToAssign > 0) {
+          plans[slotIdx].items.push({
+            model: mod.model,
+            part_number: mod.part_number,
+            uph: mod.uph,
+            stages: mod.stages,
+            target: qtyToAssign,
+            start_time: itemStartTime,
+            end_time: itemEndTime,
+            target_estimated_time: Math.round(timeTaken)
+          });
+          plans[slotIdx].totalTarget += qtyToAssign;
+        }
+
+        remainingTarget -= qtyToAssign;
+        slotMinsRem -= timeTaken;
+        slotStartTime = itemEndTime;
+
+        if (slotMinsRem <= 1) { // Move to next slot
+          slotIdx++;
+          if (slotIdx < SHIFT_SLOTS.length) {
+            slotMinsRem = SHIFT_SLOTS[slotIdx].minutes;
+            slotStartTime = SHIFT_SLOTS[slotIdx].start;
+          }
+        }
+      }
+    });
+
+    return plans.filter(p => p.items.length > 0);
+  }, [models, manpower]);
+
+  const getEstimatedTimeLabel = (target: string, uph: number | null, stages: number | null) => {
+    const t = Number(target || 0);
+    const effUph = getEffectiveUph(uph, stages, manpower);
+    if (t <= 0 || effUph <= 0) return '';
+    const totalMinutes = Math.round((t / effUph) * 60);
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (hrs === 0) return `${mins} min`;
+    return mins === 0 ? `${hrs} hr` : `${hrs} hr ${mins} min`;
+  };
+
+const handleSavePlan = async () => {
+    if (!date || !manpower || hourlyPlan.length === 0) {
+      Alert.alert('Error', 'Please complete the plan details before saving.');
+      return;
+    }
+
+    const payload: ProductionRecordInsert[] = hourlyPlan.map(slot => ({
+      date: date,
+      hour: slot.hour,
+      manpower: parseInt(manpower, 10),
+      target_units: slot.totalTarget,
+      units_produced: 0,
+      operator_id: operatorId ? parseInt(operatorId) : null,
+      operator_name: operatorName,
+      team: team,
+      plan_dt: slot.plan_dt > 0 ? slot.plan_dt : null,
+      remarks: slot.remarks || '',
+      item: slot.items
+    }));
+
+    try {
+      const { error } = await supabase.from('production_records').insert(payload);
+      if (error) throw error;
+      
+      Alert.alert('Success', 'Production plan successfully saved!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            handleClear();
+            // Pushes to the records tab and passes a timestamp parameter to force a refresh
+            // NOTE: Change '/records' to the actual path of your records tab if it's named differently (e.g., '/(tabs)/records')
+            router.push({
+              pathname: '/records', 
+              params: { refreshStamp: Date.now() }
+            });
+          }
+        }
+      ]);
+    } catch (err: any) {
+      Alert.alert('Database Error', err.message);
+    }
+  };
+
+  const handleClear = () => {
+    setDate(today);
+    setManpower('');
+    setModels([{ model: '', part_number: '', uph: null, target: '', stages: null }]);
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f3f4f6' }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView 
+          style={styles.container} 
+          contentContainerStyle={{ paddingBottom: 40 }} 
+          keyboardShouldPersistTaps="always"
+          nestedScrollEnabled
+        >
+          
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View style={styles.formGroupRow}>
+                <Text style={styles.label}>Date</Text>
+                <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
+                  <Text>{new Date(date).toLocaleDateString('en-GB')}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.formGroupRow}>
+                <Text style={styles.label}>Manpower</Text>
+                <TextInput
+                  style={styles.input}
+                  value={manpower}
+                  onChangeText={setManpower}
+                  keyboardType="number-pad"
+                  placeholder="Count"
+                />
+              </View>
+            </View>
+          </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={new Date(date)}
+              mode="date"
+              display="default"
+              onValueChange={(event, selectedDate) => {
+                setShowDatePicker(false);
+                if (selectedDate) setDate(selectedDate.toISOString().split('T')[0]);
+              }}
+            />
+          )}
+
+          <Text style={styles.sectionTitle}>Models & Targets</Text>
+          {models.map((modelItem, index) => (
+            <View key={index} style={styles.card}>
+              <View style={styles.modelRow}>
+                <View style={{ flex: 2.5, marginRight: 8 }}>
+                  <Text style={styles.label}>Model Search</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={modelItem.model}
+                    placeholder="Search Part/Model..."
+                    onChangeText={(text) => {
+                      const newModels = [...models];
+                      newModels[index].model = text;
+                      setModels(newModels);
+
+                      if (text.length > 0) {
+                        const words = text.toLowerCase().replace(/[-\s]/g, "");
+                        const filtered = items.filter(it => 
+                          it.description.toLowerCase().replace(/[-\s]/g, "").includes(words) || 
+                          it.part_id.toLowerCase().replace(/[-\s]/g, "").includes(words)
+                        );
+                        setFilteredItems(filtered);
+                        setDropdownVisible(filtered.length > 0);
+                        setCurrentModelIndex(index);
+                      } else {
+                        setDropdownVisible(false);
+                      }
+                    }}
+                    onFocus={() => {
+                      setCurrentModelIndex(index);
+                      setDropdownVisible(filteredItems.length > 0);
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setDropdownVisible(false);
+                        setCurrentModelIndex(null);
+                      }, 120);
+                    }}
+                  />
+                </View>
+
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.label}>UPH</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: '#e5e7eb', textAlign: 'center' }]}
+                    value={modelItem.uph ? modelItem.uph.toFixed(0) : ''}
+                    editable={false}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Target</Text>
+                  <View style={{ position: 'relative' }}>
+                    <TextInput
+                      style={[styles.input, { paddingBottom: 18, textAlign: 'center' }]}
+                      value={modelItem.target}
+                      onChangeText={(text) => {
+                        const newModels = [...models];
+                        newModels[index].target = text;
+                        setModels(newModels);
+                      }}
+                      keyboardType="number-pad"
+                      placeholder="Qty"
+                    />
+                    <Text style={styles.estimatedTimeText}>
+                      {getEstimatedTimeLabel(modelItem.target, modelItem.uph, modelItem.stages)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Exact reference code dropdown injected in the normal flow below the inputs */}
+              {dropdownVisible && currentModelIndex === index && (
+                <View style={styles.dropdownContainer}>
+                  <ScrollView
+                    style={styles.dropdownScroll}
+                    keyboardShouldPersistTaps="always"
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    onStartShouldSetResponderCapture={() => true}
+                    onMoveShouldSetResponderCapture={() => true}
+                  >
+                    {filteredItems.map((item, idx) => (
+                      <TouchableOpacity
+                        key={idx.toString()}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          const newModels = [...models];
+                          newModels[index] = { 
+                            ...newModels[index], 
+                            model: item.model || item.description, 
+                            part_number: item.part_id 
+                          };
+                          setModels(newModels);
+                          setDropdownVisible(false);
+                          fetchUphForPartNumber(item.part_id, index);
+                        }}
+                      >
+                        <Text style={styles.dropdownText}>{item.part_id} : {item.model || item.description}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {models.length > 1 && (
+                <TouchableOpacity style={styles.removeButton} onPress={() => setModels(models.filter((_, i) => i !== index))}>
+                  <Trash2 size={16} color="#ef4444" />
+                  <Text style={styles.removeButtonText}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+
+          <TouchableOpacity style={styles.addButton} onPress={() => setModels([...models, { model: '', part_number: '', uph: null, target: '', stages: null }])}>
+            <Text style={styles.addButtonText}>+ Add Next Model</Text>
+          </TouchableOpacity>
+
+          {/* Generated Plan Preview */}
+          {hourlyPlan.length > 0 && (
+            <View style={styles.previewContainer}>
+              <Text style={styles.sectionTitle}>Hourly Plan Preview</Text>
+              {hourlyPlan.map((slot, i) => (
+                <View key={i} style={styles.slotCard}>
+                  <View style={styles.slotHeader}>
+                    <Text style={styles.slotTime}>{slot.start} - {slot.end} (Hour {slot.hour})</Text>
+                    <Text style={styles.slotTarget}>Total: {slot.totalTarget}</Text>
+                  </View>
+                  {slot.items.map((item, j) => (
+                    <Text key={j} style={styles.slotDetail}>
+                      • {item.model} | Qty: {item.target} | {item.start_time} - {item.end_time}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.actionContainer}>
+            <TouchableOpacity style={styles.saveButton} onPress={handleSavePlan}>
+              <Text style={styles.saveButtonText}>Save Plan</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.clearButton} onPress={handleClear}>
+              <Text style={styles.clearButtonText}>Clear Plan</Text>
+            </TouchableOpacity>
+          </View>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 12 },
+  card: { backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 12, elevation: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#374151', marginVertical: 8 },
+  row: { flexDirection: 'row', justifyContent: 'space-between' },
+  formGroupRow: { flex: 1, marginRight: 8 },
+  label: { fontSize: 13, fontWeight: '600', color: '#4b5563', marginBottom: 4 },
+  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, padding: 10, fontSize: 15, backgroundColor: '#fff', color: '#1f1f1f' },
+  modelRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  
+  // Adjusted EXACTLY matching reference
+  dropdownContainer: {
+    marginTop: 4,
+    zIndex: 1000,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    maxHeight: 220,
+    overflow: 'hidden',
+    elevation: 3,
+  },
+  dropdownScroll: {
+    maxHeight: 220,
+    backgroundColor: '#fff',
+  },
+  dropdownItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: 'transparent',
+  },
+  dropdownText: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  // ------------------------------------
+
+  estimatedTimeText: { position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: '#2563eb', fontWeight: 'bold' },
+  addButton: { backgroundColor: '#e0e7ff', padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 20 },
+  addButtonText: { color: '#4f46e5', fontWeight: '700', fontSize: 15 },
+  removeButton: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8 },
+  removeButtonText: { color: '#ef4444', marginLeft: 4, fontSize: 13, fontWeight: '600' },
+  previewContainer: { backgroundColor: '#f9fafb', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: 20 },
+  slotCard: { backgroundColor: '#fff', padding: 8, borderRadius: 6, marginBottom: 8, borderWidth: 1, borderColor: '#e5e7eb' },
+  slotHeader: { flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#f3f4f6', paddingBottom: 4, marginBottom: 4 },
+  slotTime: { fontWeight: '700', color: '#111827' },
+  slotTarget: { fontWeight: '700', color: '#059669' },
+  slotDetail: { fontSize: 12, color: '#4b5563', marginVertical: 2 },
+  actionContainer: { flexDirection: 'row', gap: 12 },
+  saveButton: { flex: 2, backgroundColor: '#2563eb', padding: 14, borderRadius: 8, alignItems: 'center' },
+  saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  clearButton: { flex: 1, backgroundColor: '#fef2f2', padding: 14, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5' },
+  clearButtonText: { color: '#ef4444', fontWeight: 'bold', fontSize: 15 },
+});

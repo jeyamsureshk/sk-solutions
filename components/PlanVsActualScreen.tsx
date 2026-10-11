@@ -13,6 +13,7 @@ interface ModelSummary {
   model: string;
   totalQuantity: number;
   recordCount: number;
+  totalTarget?: number; // Fetched from production_records jsonb array
 }
 
 interface TeamSummary {
@@ -29,16 +30,13 @@ interface Props {
   selectedDate: Date;
   period: 'day' | 'month' | 'year';
   planData: any;
-  updatePlan: (
-    model: string,
-    field: string,
-    value: any
-  ) => void;
+  updatePlan: (model: string, field: string, value: any) => void;
   etaPickerModel: string | null;
   setEtaPickerModel: (value: string | null) => void;
   formatEtaDate: (date?: string) => string;
   formatDateDisplay: (date: Date) => string;
 }
+
 export default function PlanVsActualScreen({
   teamSummary,
   selectedDate,
@@ -50,10 +48,7 @@ export default function PlanVsActualScreen({
   formatEtaDate,
   formatDateDisplay,
 }: Props) {
-  if (
-    !teamSummary?.modelSummaries ||
-    teamSummary.modelSummaries.length === 0
-  ) {
+  if (!teamSummary?.modelSummaries || teamSummary.modelSummaries.length === 0) {
     return null;
   }
 
@@ -66,259 +61,99 @@ export default function PlanVsActualScreen({
       </View>
 
       <View style={styles.tableHeader}>
-        <Text style={[styles.headerText, { flex: 0.5 }]}>
-          S.No
-        </Text>
-
-        <Text
-          style={[
-            styles.headerText,
-            {
-              flex: 1.4,
-              textAlign: 'left',
-            },
-          ]}
-        >
-          Model Name
-        </Text>
-
-        <Text style={[styles.headerText, { flex: 0.6 }]}>
-          Plan
-        </Text>
-
-        <Text style={[styles.headerText, { flex: 0.6 }]}>
-          Actual
-        </Text>
-
-        <Text style={[styles.headerText, { flex: 1.9 }]}>
-          Remarks
-        </Text>
-
-        <Text style={[styles.headerText, { flex: 0.6 }]}>
-          ETA
-        </Text>
+        <Text style={[styles.headerText, { flex: 0.5 }]}>S.No</Text>
+        <Text style={[styles.headerText, { flex: 1.4, textAlign: 'left' }]}>Model Name</Text>
+        <Text style={[styles.headerText, { flex: 0.6 }]}>Plan</Text>
+        <Text style={[styles.headerText, { flex: 0.6 }]}>Actual</Text>
+        <Text style={[styles.headerText, { flex: 1.9 }]}>Remarks</Text>
+        <Text style={[styles.headerText, { flex: 0.6 }]}>ETA</Text>
       </View>
-{teamSummary.modelSummaries
-  .filter(
-    (item) =>
-      item?.model &&
-      item?.totalQuantity !== null &&
-      item?.totalQuantity !== undefined
-  )
-  .slice()
-  .sort((a: any, b: any) =>
-    a.model.localeCompare(b.model)
-  )
-  .map((model: ModelSummary, modelIndex: number) => {
+
+      {teamSummary.modelSummaries
+        .filter((item) => item?.model && item?.totalQuantity !== null && item?.totalQuantity !== undefined)
+        .slice()
+        .sort((a, b) => a.model.localeCompare(b.model))
+        .map((model, modelIndex) => {
           const key = model.model;
 
-          const currentPlan = planData[key] || {
-            plan_qty: 0,
-            remarks: '',
-            eta: '',
-          };
+          // Pulls the summed target from the production_records jsonb
+          const planTarget = model.totalTarget || 0; 
 
-          const actual =
-  model.totalQuantity !== null &&
-  model.totalQuantity !== undefined
-    ? Number(model.totalQuantity) || 0
-    : 0;
-          const isCompleted =
-            currentPlan.plan_qty > 0 &&
-            actual >= currentPlan.plan_qty;
+          const currentPlan = planData[key] || { plan_qty: undefined, remarks: '', eta: '' };
 
-          const displayRemark =
-            currentPlan.remarks ||
-            (isCompleted ? 'Completed' : '');
+          // Use the user-edited plan quantity if it exists, otherwise fallback to the aggregated target
+          const activePlanTarget = currentPlan.plan_qty !== undefined && currentPlan.plan_qty !== null 
+            ? currentPlan.plan_qty 
+            : planTarget;
 
-          const placeholderText = isCompleted
-            ? 'Completed'
-            : 'Remarks';
+          const actual = Number(model.totalQuantity) || 0;
+          const isCompleted = activePlanTarget > 0 && actual >= activePlanTarget;
+          const displayRemark = currentPlan.remarks || (isCompleted ? 'Completed' : '');
+          const placeholderText = isCompleted ? 'Completed' : 'Remarks';
 
           return (
-            <View
-              key={modelIndex}
-              style={styles.modelItem}
-            >
-              <Text
-                style={[
-                  styles.tableCell,
-                  { flex: 0.5 },
-                ]}
-              >
-                {modelIndex + 1}
-              </Text>
-
-              <Text
-                style={[
-                  styles.modelNameCell,
-                  { flex: 1.4 },
-                ]}
-                numberOfLines={2}
-              >
+            <View key={modelIndex} style={styles.modelItem}>
+              <Text style={[styles.tableCell, { flex: 0.5 }]}>{modelIndex + 1}</Text>
+              
+              <Text style={[styles.modelNameCell, { flex: 1.4 }]} numberOfLines={2}>
                 {model.model}
               </Text>
 
-              <View
-                style={[
-                  styles.tableCell,
-                  { flex: 0.6 },
-                ]}
-              >
+              {/* Editable Plan Quantity */}
+              <View style={[styles.tableCell, { flex: 0.6 }]}>
                 {period === 'day' ? (
                   <TextInput
                     style={styles.tableInput}
                     keyboardType="numeric"
-                    value={
-                      currentPlan.plan_qty
-                        ? String(currentPlan.plan_qty)
-                        : ''
-                    }
+                    value={activePlanTarget > 0 ? String(activePlanTarget) : ''}
                     onChangeText={(text) => {
-                      const newValue =
-                        text === ''
-                          ? 0
-                          : parseInt(
-                              text.replace(
-                                /[^0-9]/g,
-                                ''
-                              )
-                            ) || 0;
-
-                      updatePlan(
-                        key,
-                        'plan_qty',
-                        newValue
-                      );
+                      const newValue = text === '' ? 0 : parseInt(text.replace(/[^0-9]/g, '')) || 0;
+                      updatePlan(key, 'plan_qty', newValue);
                     }}
-                    placeholder="0"
+                    placeholder={planTarget > 0 ? String(planTarget) : "0"}
                     placeholderTextColor="#9ca3af"
                   />
                 ) : (
-                  <Text style={styles.tableCell}>
-                    {currentPlan.plan_qty.toLocaleString()}
-                  </Text>
+                  <Text style={styles.tableCell}>{activePlanTarget.toLocaleString()}</Text>
                 )}
               </View>
 
-              <Text
-                style={[
-                  styles.tableCell,
-                  { flex: 0.6 },
-                ]}
-              >
+              <Text style={[styles.tableCell, { flex: 0.6 }]}>
                 {actual.toLocaleString()}
               </Text>
 
-              <View
-                style={[
-                  styles.tableCell,
-                  { flex: 1.9 },
-                ]}
-              >
+              <View style={[styles.tableCell, { flex: 1.9 }]}>
                 {period === 'day' ? (
                   <TextInput
-                    style={[
-                      styles.tableInput,
-                      {
-                        fontSize: 8.5,
-                        minHeight: 24,
-                      },
-                    ]}
+                    style={[styles.tableInput, { fontSize: 8.5, minHeight: 24 }]}
                     value={displayRemark}
-                    onChangeText={(text) =>
-                      updatePlan(
-                        key,
-                        'remarks',
-                        text
-                      )
-                    }
+                    onChangeText={(text) => updatePlan(key, 'remarks', text)}
                     placeholder={placeholderText}
                     placeholderTextColor="#9ca3af"
                     multiline
                   />
                 ) : (
-                  <Text
-                    style={{
-                      fontSize: 8.5,
-                    }}
-                  >
-                    {displayRemark || '-'}
-                  </Text>
+                  <Text style={{ fontSize: 8.5 }}>{displayRemark || '-'}</Text>
                 )}
               </View>
 
-              <View
-                style={[
-                  styles.tableCell,
-                  {
-                    flex: 0.6,
-                    flexDirection: 'row',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  },
-                ]}
-              >
+              <View style={[styles.tableCell, { flex: 0.6, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }]}>
                 {period === 'day' ? (
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <TouchableOpacity
-                      onPress={() =>
-                        setEtaPickerModel(key)
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.tableInput,
-                          {
-                            color: currentPlan.eta
-                              ? '#374151'
-                              : '#9ca3af',
-                            fontSize: 8.5,
-                          },
-                        ]}
-                      >
-                        {formatEtaDate(
-                          currentPlan.eta
-                        ) || '- - - -'}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => setEtaPickerModel(key)}>
+                      <Text style={[styles.tableInput, { color: currentPlan.eta ? '#374151' : '#9ca3af', fontSize: 8.5 }]}>
+                        {formatEtaDate(currentPlan.eta) || '- - - -'}
                       </Text>
                     </TouchableOpacity>
 
                     {currentPlan.eta ? (
-                      <TouchableOpacity
-                        onPress={() =>
-                          updatePlan(
-                            key,
-                            'eta',
-                            ''
-                          )
-                        }
-                        style={{
-                          marginLeft: 2,
-                        }}
-                      >
-                        <Icon
-                          name="close"
-                          size={10}
-                          color="#EF4444"
-                        />
+                      <TouchableOpacity onPress={() => updatePlan(key, 'eta', '')} style={{ marginLeft: 2 }}>
+                        <Icon name="close" size={10} color="#EF4444" />
                       </TouchableOpacity>
                     ) : null}
                   </View>
                 ) : (
-                  <Text
-                    style={{
-                      fontSize: 10,
-                    }}
-                  >
-                    {formatEtaDate(
-                      currentPlan.eta
-                    ) || '-'}
-                  </Text>
+                  <Text style={{ fontSize: 10 }}>{formatEtaDate(currentPlan.eta) || '-'}</Text>
                 )}
               </View>
             </View>
@@ -329,68 +164,13 @@ export default function PlanVsActualScreen({
 }
 
 const styles = StyleSheet.create({
-  modelList: {
-    marginTop: 4,
-  },
-
-  planDateHeader: {
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    marginBottom: 8,
-  },
-
-  planDateText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
-  },
-
-  tableHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 6,
-    marginBottom: 4,
-  },
-
-  headerText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#374151',
-    textAlign: 'center',
-  },
-
- modelItem: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingVertical: 6,
-  paddingHorizontal: 8,
-  backgroundColor: '#f9fafb',
-  borderRadius: 6,
-  marginBottom: -7,
-},
-  modelNameCell: {
-    textAlign: 'left',
-    fontSize: 10,
-    color: '#374151',
-  },
-
-  tableCell: {
-    textAlign: 'center',
-    fontSize: 10,
-    color: '#374151',
-  },
-
-  tableInput: {
-    textAlign: 'center',
-    fontSize: 10,
-    color: '#374151',
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-    backgroundColor: 'transparent',
-  },
+  modelList: { marginTop: 4 },
+  planDateHeader: { paddingVertical: 8, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', marginBottom: 8 },
+  planDateText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  tableHeader: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, paddingHorizontal: 8, backgroundColor: '#e5e7eb', borderRadius: 6, marginBottom: 4 },
+  headerText: { fontSize: 10, fontWeight: '600', color: '#374151', textAlign: 'center' },
+  modelItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 8, backgroundColor: '#f9fafb', borderRadius: 6, marginBottom: -7 },
+  modelNameCell: { textAlign: 'left', fontSize: 10, color: '#374151' },
+  tableCell: { textAlign: 'center', fontSize: 10, color: '#374151' },
+  tableInput: { textAlign: 'center', fontSize: 10, color: '#374151', paddingVertical: 0, paddingHorizontal: 0, backgroundColor: 'transparent' },
 });

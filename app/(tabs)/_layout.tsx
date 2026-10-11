@@ -122,6 +122,9 @@ export default function TabLayout() {
             tabBarIcon: ({ size, color }) => <Plus size={size} color={color} />,
             headerRight: () => (
               <View style={{ flexDirection: 'row', marginRight: 16 }}>
+                <TouchableOpacity onPress={() => router.push('/ProductionPlan')} style={styles.headerBtn}>
+                  <Text style={styles.headerBtnText}>+ Plan</Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/add-production-day')} style={styles.headerBtn}>
                   <Text style={styles.headerBtnText}>+ Day Entry </Text>
                 </TouchableOpacity>

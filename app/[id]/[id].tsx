@@ -401,7 +401,7 @@ export default function ChatScreen() {
                   <Ionicons
                     name={item.read ? 'checkmark-done' : 'checkmark'} // Switched to WhatsApp style checkmarks
                     size={15}
-                    color={item.read ? "red" : "#8696a0"} // WhatsApp blue ticks vs grey ticks
+                    color={item.read ? '#53bdeb' : '#8696a0'}
                     style={{ marginLeft: 2 }}
                   />
                 )}
@@ -427,7 +427,7 @@ export default function ChatScreen() {
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#efe7de' }]}>
           <ImageBackground 
             source={{ uri: WA_DOODLE_URL }} 
-            style={[StyleSheet.absoluteFillObject, { opacity: 0.4 }]} 
+            style={[StyleSheet.absoluteFillObject, { opacity: 0.14 }]} 
             resizeMode="repeat" 
           />
         </View>
@@ -604,7 +604,8 @@ const styles = StyleSheet.create({
   // Header
   headerContainer: {
     width: '100%',
-    zIndex: 10,    backgroundColor: 'rgba(200,67,95,1)',
+    zIndex: 10,
+    backgroundColor: '#075e54',
   },
   headerContent: {
     flexDirection: 'row',
@@ -714,7 +715,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 10,
     paddingTop: 5,
-    backgroundColor: 'transparent',
+    backgroundColor: '#f0f2f5',
   },
   inputWrapper: {
     flex: 1,
@@ -744,7 +745,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#f00', // WhatsApp send button color
+    backgroundColor: '#00a884',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: "#000",
@@ -754,8 +755,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   sendButtonDisabled: {
-    backgroundColor: '#f00', 
-    opacity: 0.5,
+    backgroundColor: '#8696a0',
   },
 
   // Modal

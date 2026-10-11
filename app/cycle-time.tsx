@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -315,9 +315,52 @@ const cyclesPerHour =
     setActivePartNumberIndex(null);
   };
 
+  // UI-ONLY Realtime calculation for display
+  const displayOutputs = useMemo(() => {
+    const stageAverages: number[] = [];
+    stages.forEach((stage) => {
+      const validCounts = stage.counts
+        .map(c => parseFloat(c.trim()))
+        .filter(c => !isNaN(c) && c > 0);
+
+      if (validCounts.length > 0) {
+        const stageAvg = validCounts.reduce((sum, c) => sum + c, 0) / validCounts.length;
+        stageAverages.push(stageAvg);
+      }
+    });
+
+    const overallAvg = stageAverages.length > 0
+      ? stageAverages.reduce((sum, avg) => sum + avg, 0) / stageAverages.length
+      : 0;
+
+    const oneManpowerOutput = overallAvg > 0
+      ? parseInt(String((3600 / overallAvg) / stages.length), 10)
+      : 0;
+
+    const cyclesPerHour = oneManpowerOutput > 0
+      ? oneManpowerOutput * stages.length
+      : 0;
+
+    return { oneManpowerOutput, cyclesPerHour };
+  }, [stages]);
+
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <KeyboardAwareScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f3f4f6' }}>
+      
+      {/* Sticky Dynamic Output Display at the very top */}
+      <View style={styles.stickyOutputContainer}>
+        <View style={styles.outputBox}>
+          <Text style={styles.outputLabel}>1 MP Output</Text>
+          <Text style={styles.outputValue}>{displayOutputs.oneManpowerOutput}</Text>
+        </View>
+        <View style={styles.outputDivider} />
+        <View style={styles.outputBox}>
+          <Text style={styles.outputLabel}>Total Output (UPH)</Text>
+          <Text style={styles.outputValue}>{displayOutputs.cyclesPerHour}</Text>
+        </View>
+      </View>
+
+      <KeyboardAwareScrollView style={styles.scrollContainer} keyboardShouldPersistTaps="handled">
           <Text style={styles.title}>Add Cycle Time Record</Text>
 
           {/* Team */}
@@ -506,9 +549,8 @@ const cyclesPerHour =
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scrollContainer: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
     padding: 16,
   },
   stageContainer: {
@@ -726,5 +768,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     fontSize: 16,
     color: '#1f2937',
+  },
+  stickyOutputContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  outputBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  outputDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: '#e5e7eb',
+    marginHorizontal: 8,
+  },
+  outputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  outputValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2563eb',
   },
 });

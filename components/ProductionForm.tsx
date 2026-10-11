@@ -274,14 +274,14 @@ export default function ProductionForm({
       planned += mins;
     }
     else if (
-      lower.includes("fault") || lower.includes("machine breakdown") || lower.includes("input delay") ||
+      lower.includes("delay") || lower.includes("machine breakdown") || lower.includes("input delay") ||
       lower.includes("kitting delay") || lower.includes("material") || lower.includes("power failure") ||
       lower.includes("waiting")
     ) {
       unplanned += mins;
     }
 
-    if (lower.includes("nos") || lower.includes("pcs")) {
+    if (lower.includes("fault") || lower.includes("damage")) {
       const qty = Number(line.match(/\d+/)?.[0]) || 0;
       defects += qty;
     }
@@ -1083,11 +1083,11 @@ const actualEstimatedMinutes =
           <View style={styles.row}>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Plan DT</Text>
-              <TextInput style={styles.input} value={planDt} onChangeText={setPlanDt} keyboardType="numeric" placeholder="Mins"/>
+              <TextInput style={styles.input} value={planDt} onChangeText={setPlanDt} keyboardType="numeric" placeholder="Minutes"/>
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Unplan DT</Text>
-              <TextInput style={styles.input} value={unplanDt} onChangeText={setUnplanDt} keyboardType="numeric" placeholder="Mins"/>
+              <TextInput style={styles.input} value={unplanDt} onChangeText={setUnplanDt} keyboardType="numeric" placeholder="Minutes"/>
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Defect Qty</Text>
@@ -1103,7 +1103,7 @@ const actualEstimatedMinutes =
                 style={[styles.input, styles.textArea]}
                 multiline
                 numberOfLines={3}
-                placeholder="Enter Remarks"
+                placeholder="Enter Remarks or Any Down Time Reason"
                 onChangeText={(text) => {
                   // Transform 'offline :' to 'Offline :' dynamically
                   const updatedText = text.replace(/offline\s*:/ig, 'Offline :');

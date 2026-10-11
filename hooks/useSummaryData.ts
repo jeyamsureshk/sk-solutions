@@ -102,31 +102,35 @@ export function useSummaryData(selectedDate: SelectedDate, period: PeriodType) {
             const teamTarget = teamRecords.reduce((sum, r) => sum + r.target_units, 0);
             const teamEfficiency = teamTarget > 0 ? (teamProduced / teamTarget) * 100 : 0;
 
-            // ✅ Aggregate model quantities with normalization
-            const modelMap = new Map<string, { displayName: string; totalQuantity: number; recordCount: number }>();
+            // ✅ Aggregate model quantities and targets with normalization
+            const modelMap = new Map<string, { displayName: string; totalQuantity: number; totalTarget: number; recordCount: number }>();
             teamRecords.forEach(record => {
               if (record.item && Array.isArray(record.item)) {
-                record.item.forEach((item: { model: string; quantity: string | number }) => {
-                  if (
-  item.model &&
-  item.quantity !== null &&
-  item.quantity !== undefined
-) {
+                record.item.forEach((item: { model: string; quantity?: string | number; target?: string | number }) => {
+                  
+                  // FIXED: Now we only check if item.model exists, ensuring we capture targets even if actual quantity is 0 or empty!
+                  if (item.model) {
                     const normalizedModel = normalizeModelName(item.model);
+                    
                     const quantity =
                       typeof item.quantity === 'string'
                         ? parseInt(item.quantity) || 0
-                        : item.quantity;
+                        : Number(item.quantity) || 0;
+                        
+                    // Parse target safely from the JSONB
+                    const target = Number(item.target) || 0;
 
                     const existing = modelMap.get(normalizedModel) || {
                       displayName: item.model, // keep first seen original for display
                       totalQuantity: 0,
+                      totalTarget: 0,
                       recordCount: 0,
                     };
 
                     modelMap.set(normalizedModel, {
                       displayName: existing.displayName,
                       totalQuantity: existing.totalQuantity + quantity,
+                      totalTarget: existing.totalTarget + target, // Summing up the full day targets
                       recordCount: existing.recordCount + 1,
                     });
                   }
@@ -137,6 +141,7 @@ export function useSummaryData(selectedDate: SelectedDate, period: PeriodType) {
             const modelSummaries = Array.from(modelMap.values()).map(data => ({
               model: data.displayName, // show original name
               totalQuantity: data.totalQuantity,
+              totalTarget: data.totalTarget, // Pass total target to the screen
               recordCount: data.recordCount,
             }));
 
@@ -198,4 +203,3 @@ export function useSummaryData(selectedDate: SelectedDate, period: PeriodType) {
 
   return { data, loading, refetch: fetchSummary };
 }
-

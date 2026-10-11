@@ -7,6 +7,7 @@ import {
   View,
   TextInput,
 } from 'react-native';
+import { Search } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback } from 'react';
@@ -91,14 +92,16 @@ export default function MessagesIndex() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-     
+      <View style={styles.searchContainer}>
+        <Search size={18} color="#667781" />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search member..."
-          placeholderTextColor="#888"
+          placeholder="Search"
+          placeholderTextColor="#667781"
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
+      </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         {filteredOperators.map(op => {
@@ -111,38 +114,37 @@ export default function MessagesIndex() {
             <TouchableOpacity
               key={op.email}
               style={styles.memberCard}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
               onPress={() => handlePress(op.email)}
             >
-              {/* Avatar */}
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{op.name.charAt(0)}</Text>
               </View>
 
-              {/* Text Section */}
-<View style={styles.textContainer}>
-  <View style={styles.nameRow}>
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <Text style={[styles.memberName, unreadCount > 0 && styles.unreadName]}>
-        {op.name}
-      </Text>
-      {unreadCount > 0 && (
-        <View style={styles.badgeInline}>
-          <Text style={styles.badgeText}>{unreadCount}</Text>
-        </View>
-      )}
-    </View>
-    {lastTime !== '' && (
-      <Text style={styles.timeText}>{formatTime(lastTime)}  </Text>
-    )}
-  </View>
-  {lastMessage !== '' && (
-    <Text style={styles.lastMessage} numberOfLines={1}>
-      {lastMessage}
-    </Text>
-  )}
-</View>
-
+              <View style={styles.textContainer}>
+                <View style={styles.nameRow}>
+                  <Text style={[styles.memberName, unreadCount > 0 && styles.unreadName]} numberOfLines={1}>
+                    {op.name}
+                  </Text>
+                  {lastTime !== '' && (
+                    <Text style={[styles.timeText, unreadCount > 0 && styles.unreadTime]}>
+                      {formatTime(lastTime)}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.previewRow}>
+                  {lastMessage !== '' ? (
+                    <Text style={styles.lastMessage} numberOfLines={1}>
+                      {lastMessage}
+                    </Text>
+                  ) : <View style={styles.lastMessage} />}
+                  {unreadCount > 0 && (
+                    <View style={styles.badgeInline}>
+                      <Text style={styles.badgeText}>{unreadCount}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -152,104 +154,73 @@ export default function MessagesIndex() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f3f4f6',    marginTop:-35 },
-
-  header: {
-    paddingTop: 50,
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    elevation: 4,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 12,
+  safeArea: { flex: 1, backgroundColor: '#ffffff', marginTop: -35 },
+  searchContainer: {
+    height: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f2f5',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 4,
   },
   searchInput: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 10,
     fontSize: 15,
-    shadowColor: '#4a9',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 9,
-    marginTop:12,
-    marginHorizontal:14,
+    color: '#111b21',
   },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingVertical: 20 },
+  scrollContent: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 12 },
 
   memberCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#eff',
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: '#2563eb',
+    minHeight: 76,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e9edef',
   },
 
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#2563eb',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#d9fdd3',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 13,
   },
   avatarText: {
-    color: '#fff',
-    fontSize: 18,
+    color: '#075e54',
+    fontSize: 20,
     fontWeight: '700',
   },
 
   textContainer: { flex: 1 },
-  nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  memberName: { fontSize: 16, fontWeight: '800', color: '#111' },
-  unreadName: { fontWeight: '700', color: '#000' },
-  lastMessage: { fontSize: 14, color: '#999', marginTop: 4 },
-  timeText: { fontSize: 12, color: '#999', marginLeft: 8 },
-
-  badge: {
-    backgroundColor: '#dc2626',
-    borderRadius: 12,
-    paddingHorizontal: 8,
+  nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  memberName: { flex: 1, fontSize: 16, fontWeight: '500', color: '#111b21' },
+  unreadName: { fontWeight: '700' },
+  previewRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
+  lastMessage: { flex: 1, fontSize: 14, color: '#667781' },
+  timeText: { fontSize: 11, color: '#667781', marginLeft: 8 },
+  unreadTime: { color: '#00a884' },
+  badgeInline: {
+    backgroundColor: '#25d366',
+    borderRadius: 10,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     marginLeft: 8,
-    minWidth: 24,
+    minWidth: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
   },
-  badgeInline: {
-  backgroundColor: '#dc2626',
-  borderRadius: 10,
-  paddingHorizontal: 6,
-  paddingVertical: 1,
-  marginLeft: 6,
-  minWidth: 20,
-  alignItems: 'center',
-  justifyContent: 'center',
-},
-badgeText: {
-  color: '#fff',
-  fontSize: 11,
-  fontWeight: '700',
-},
+  badgeText: { color: '#ffffff', fontSize: 11, fontWeight: '700' },
 });
 
