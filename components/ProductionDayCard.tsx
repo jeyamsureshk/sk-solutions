@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -22,6 +23,7 @@ interface ProductionDayCardProps {
   records: ProductionRecord[];
   onEdit: (record: ProductionRecord) => void;
   onDelete: (id: string) => void;
+  onDeleteDay?: (date: string, team: string) => void; // ✨ New Prop
 }
 
 // --- Modern Palette ---
@@ -47,6 +49,7 @@ function ProductionDayCard({
   records,
   onEdit,
   onDelete,
+  onDeleteDay, // ✨ New Prop
 }: ProductionDayCardProps) {
 
   const teamColors: Record<string, string> = {
@@ -65,6 +68,49 @@ function ProductionDayCard({
   const [selectedRecord, setSelectedRecord] = useState<ProductionRecord | null>(null);
 
   const cardRef = useRef<View>(null);
+
+// ✨ Delete Entire Day Logic
+  const handleDeleteDay = () => {
+    // Only allow if they have permission to modify these records
+    const hasPermission = records.some(r => canModifyRecords[r.id]);
+    if (!hasPermission) {
+       Alert.alert("Permission Denied", "You do not have permission to delete these records.");
+       return;
+    }
+
+    Alert.alert(
+      "Delete Entire Day",
+      `Are you sure you want to delete ALL records for ${team} on ${formatDate(date)}? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => { // ✨ Added async here
+            // If you wired up the parent component, it uses that
+            if (onDeleteDay) {
+              onDeleteDay(date, team);
+            } else {
+              // ✨ FIX: Directly delete from Supabase if parent prop is missing!
+              try {
+                const { error } = await supabase
+                  .from('production_records')
+                  .delete()
+                  .eq('date', date)
+                  .eq('team', team);
+                  
+                if (error) throw error;
+                
+                Alert.alert("Deleted", "All records for this day have been deleted. Please refresh the page.");
+              } catch (err: any) {
+                Alert.alert("Database Error", err.message);
+              }
+            }
+          }
+        }
+      ]
+    );
+  };
 
  // --- Helper: Proper Case Logic ---
   const toProperCase = (text: string) => {
@@ -332,7 +378,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
         <View style={[styles.accentBar, { backgroundColor: teamAccent }]} />
         
         <View style={styles.boardContent}>
-          {/* --- Info Row --- */}
+{/* --- Info Row --- */}
           <View style={styles.infoRow}>
             <View style={styles.infoCol}>
               <Text style={styles.infoLabel}>LINE</Text>
@@ -342,13 +388,23 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
               <Text style={styles.infoLabel}>SHIFT</Text>
               <Text style={[styles.infoValue, { color: teamAccent }]}>General</Text>
             </View>
-            <View style={styles.infoCol}>
+            
+            {/* ✨ Make the Date column Long-Pressable to trigger the Delete Day popup */}
+            <TouchableOpacity 
+              style={styles.infoCol} 
+              onLongPress={handleDeleteDay}
+              delayLongPress={600} // Requires holding for 0.6s to prevent accidental triggers
+            >
               <Text style={styles.infoLabel}>DATE</Text>
               <Text style={[styles.infoValue, { color: teamAccent }]}>{formatDate(date)}</Text>
+            </TouchableOpacity>
+            
+            {/* ✨ Action Buttons Group (Trash icon removed, only Share remains) */}
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={handleShare} style={styles.headerIconButton}>
+                 <Share2 size={16} color={teamAccent} />
+              </TouchableOpacity>
             </View>
-           <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
-   <Share2 size={16} color={teamAccent} />
-</TouchableOpacity>
           </View>
 
           {/* --- Table Grid --- */}
@@ -936,5 +992,18 @@ timeHintText: {
   fontSize: 7.5,
   fontWeight: '700',
   flexShrink: 0,
-},
+},headerActions: {
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+headerIconButton: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

@@ -29,13 +29,24 @@ export default function CycleTimeScreen() {
   const isEditing = !!record;
 
   const [team, setTeam] = useState<TeamType>('SMT');
-  const [stages, setStages] = useState<Stage[]>([{ description: '', counts: [''] }]);
   const [modelName, setModelName] = useState('');
   const [partNumbers, setPartNumbers] = useState<string[]>(['']);
   const [partNumberDropdownVisible, setPartNumberDropdownVisible] = useState(false);
   const [partNumberSuggestions, setPartNumberSuggestions] = useState<Item[]>([]);
   const [activePartNumberIndex, setActivePartNumberIndex] = useState<number | null>(null);
   const [isSelectingPartNumber, setIsSelectingPartNumber] = useState(false);
+  
+  // Tabs State
+  const [activeTab, setActiveTab] = useState<'detailed' | 'quick'>('detailed');
+
+  // Detailed Tab State
+  const [stages, setStages] = useState<Stage[]>([{ description: '', counts: [''] }]);
+
+  // Quick Tab State
+  const [quickNumStages, setQuickNumStages] = useState('1');
+  const [quickOnlineTime, setQuickOnlineTime] = useState('');
+  const [quickOfflineTime, setQuickOfflineTime] = useState('');
+
   const { items } = useItems();
   const { addCycleTimeRecord, updateCycleTimeRecord } = useCycleTime();
 
@@ -88,12 +99,23 @@ export default function CycleTimeScreen() {
       setTeam(record.team);
       setModelName(record.model_name);
       setPartNumbers(parsePartNumbers((record as any).part_number));
+      
       const recordStages = Array.isArray(record.stages) ? record.stages : [];
-      const formattedStages: Stage[] = recordStages.map((stage: any) => ({
-        description: stage.description || '',
-        counts: stage.counts ? stage.counts.map((c: any) => c.toString()) : [''],
-      }));
-      setStages(formattedStages.length > 0 ? formattedStages : [{ description: '', counts: [''] }]);
+      
+      // Determine if it was saved via Quick Tab
+      if (recordStages.length === 1 && recordStages[0].description === 'Quick Data') {
+        setActiveTab('quick');
+        setQuickOnlineTime(recordStages[0].counts[0] || '');
+        setQuickOfflineTime(recordStages[0].counts[1] || '');
+        setQuickNumStages(recordStages[0].counts[2] || '1');
+      } else {
+        setActiveTab('detailed');
+        const formattedStages: Stage[] = recordStages.map((stage: any) => ({
+          description: stage.description || '',
+          counts: stage.counts ? stage.counts.map((c: any) => c.toString()) : [''],
+        }));
+        setStages(formattedStages.length > 0 ? formattedStages : [{ description: '', counts: [''] }]);
+      }
     }
   }, [isEditing]);
 
@@ -136,7 +158,7 @@ export default function CycleTimeScreen() {
 
   const handleSubmit = async () => {
     if (!team.trim()) {
-      Alert.alert('Error', 'Please enter a team name.');
+      Alert.alert('Error', 'Please select a team.');
       return;
     }
 
@@ -155,54 +177,79 @@ export default function CycleTimeScreen() {
       return;
     }
 
-    const hasValidData = stages.some(
-      stage => stage.description.trim() || stage.counts.some(c => c.trim())
-    );
+    let stagesData: any[] = [];
+    let overallAvg = 0;
+    let cyclesPerHour = 0;
 
-    if (!hasValidData) {
-      Alert.alert('Error', 'Please enter a description or at least one count value.');
-      return;
-    }
+    if (activeTab === 'detailed') {
+      const hasValidData = stages.some(
+        stage => stage.description.trim() || stage.counts.some(c => c.trim())
+      );
 
-    // Calculate averages
-    const stageAverages: number[] = [];
-    const stagesData: any[] = [];
+      if (!hasValidData) {
+        Alert.alert('Error', 'Please enter a description or at least one count value.');
+        return;
+      }
 
-    stages.forEach((stage, index) => {
-      const validCounts = stage.counts
-        .map(c => parseFloat(c.trim()))
-        .filter(c => !isNaN(c) && c > 0);
+      const stageAverages: number[] = [];
 
-      let stageAvg = 0;
-      if (validCounts.length > 0) {
-        stageAvg = validCounts.reduce((sum, c) => sum + c, 0) / validCounts.length;
-        stageAverages.push(stageAvg);
+      stages.forEach((stage) => {
+        const validCounts = stage.counts
+          .map(c => parseFloat(c.trim()))
+          .filter(c => !isNaN(c) && c > 0);
+
+        let stageAvg = 0;
+        if (validCounts.length > 0) {
+          stageAvg = validCounts.reduce((sum, c) => sum + c, 0) / validCounts.length;
+          stageAverages.push(stageAvg);
+        }
+
+        stagesData.push({
+          description: stage.description,
+          counts: stage.counts,
+          average: stageAvg,
+        });
+      });
+
+      overallAvg = stageAverages.length > 0
+        ? stageAverages.reduce((sum, avg) => sum + avg, 0) / stageAverages.length
+        : 0;
+
+      const oneManpowerOutput = overallAvg > 0
+        ? parseInt(String((3600 / overallAvg) / stages.length), 10)
+        : 0;
+
+      cyclesPerHour = oneManpowerOutput > 0
+        ? oneManpowerOutput * stages.length
+        : 0;
+
+        } else {
+      // ✨ QUICK TAB SUBMISSION
+      const online = parseFloat(quickOnlineTime) || 0;
+      const offline = parseFloat(quickOfflineTime) || 0;
+      const numStages = parseInt(quickNumStages, 10) || 1;
+      
+      const sumSeconds = online + offline;
+
+      if (sumSeconds <= 0) {
+        Alert.alert('Error', 'Please enter valid online or offline times.');
+        return;
       }
 
       stagesData.push({
-        description: stage.description,
-        counts: stage.counts,
-        average: stageAvg,
+        description: 'Quick Data',
+        counts: [quickOnlineTime, quickOfflineTime, String(numStages)],
+        average: sumSeconds
       });
-    });
 
-    // Overall average of stage averages
-    const overallAvg = stageAverages.length > 0
-      ? stageAverages.reduce((sum, avg) => sum + avg, 0) / stageAverages.length
-      : 0;
-
-    // Calculate sum of all stage averages
-    const sumStageAvg = stageAverages.reduce((sum, avg) => sum + avg, 0);
-
-    const oneManpowerOutput =
-  overallAvg > 0
-    ? parseInt(String((3600 / overallAvg) / stages.length), 10)
-    : 0;
-
-const cyclesPerHour =
-  oneManpowerOutput > 0
-    ? oneManpowerOutput * stages.length
-    : 0;
+      overallAvg = sumSeconds;
+      
+      // 1 MP Output = floor(3600 / sum of seconds)
+      const oneManpowerOutput = Math.floor(3600 / sumSeconds);
+      
+      // Total Output = 1 MP Output * number of stages
+      cyclesPerHour = oneManpowerOutput * numStages;
+    }
 
     // Prepare data for database
     const recordData: CycleTimeRecordInsert = {
@@ -239,9 +286,12 @@ const cyclesPerHour =
     setPartNumberSuggestions([]);
     setActivePartNumberIndex(null);
     setStages([{ description: '', counts: [''] }]);
+    setQuickNumStages('1');
+    setQuickOnlineTime('');
+    setQuickOfflineTime('');
   };
 
-  // NEW HELPER: Auto-updates model names based on current valid part numbers
+  // Auto-updates model names based on current valid part numbers
   const updateModelNameFromParts = (nextPartNumbers: string[]) => {
     const matchedModels = nextPartNumbers
       .map((pn) => {
@@ -315,34 +365,53 @@ const cyclesPerHour =
     setActivePartNumberIndex(null);
   };
 
-  // UI-ONLY Realtime calculation for display
+// UI-ONLY Realtime calculation for display
   const displayOutputs = useMemo(() => {
-    const stageAverages: number[] = [];
-    stages.forEach((stage) => {
-      const validCounts = stage.counts
-        .map(c => parseFloat(c.trim()))
-        .filter(c => !isNaN(c) && c > 0);
+    let oneManpowerOutput = 0;
+    let cyclesPerHour = 0;
 
-      if (validCounts.length > 0) {
-        const stageAvg = validCounts.reduce((sum, c) => sum + c, 0) / validCounts.length;
-        stageAverages.push(stageAvg);
+    if (activeTab === 'detailed') {
+      const stageAverages: number[] = [];
+      stages.forEach((stage) => {
+        const validCounts = stage.counts
+          .map(c => parseFloat(c.trim()))
+          .filter(c => !isNaN(c) && c > 0);
+
+        if (validCounts.length > 0) {
+          const stageAvg = validCounts.reduce((sum, c) => sum + c, 0) / validCounts.length;
+          stageAverages.push(stageAvg);
+        }
+      });
+
+      const overallAvg = stageAverages.length > 0
+        ? stageAverages.reduce((sum, avg) => sum + avg, 0) / stageAverages.length
+        : 0;
+
+      oneManpowerOutput = overallAvg > 0
+        ? parseInt(String((3600 / overallAvg) / stages.length), 10)
+        : 0;
+
+      cyclesPerHour = oneManpowerOutput > 0
+        ? oneManpowerOutput * stages.length
+        : 0;
+    } else {
+      // ✨ QUICK INPUT REAL-TIME CALCULATION
+      const online = parseFloat(quickOnlineTime) || 0;
+      const offline = parseFloat(quickOfflineTime) || 0;
+      const numStages = parseInt(quickNumStages, 10) || 1;
+      
+      const sumSeconds = online + offline;
+
+      if (sumSeconds > 0) {
+        // 1 MP Output = floor(3600 / sum of seconds)
+        oneManpowerOutput = Math.floor(3600 / sumSeconds);
+        // Total Output = 1 MP Output * number of stages
+        cyclesPerHour = oneManpowerOutput * numStages;
       }
-    });
-
-    const overallAvg = stageAverages.length > 0
-      ? stageAverages.reduce((sum, avg) => sum + avg, 0) / stageAverages.length
-      : 0;
-
-    const oneManpowerOutput = overallAvg > 0
-      ? parseInt(String((3600 / overallAvg) / stages.length), 10)
-      : 0;
-
-    const cyclesPerHour = oneManpowerOutput > 0
-      ? oneManpowerOutput * stages.length
-      : 0;
+    }
 
     return { oneManpowerOutput, cyclesPerHour };
-  }, [stages]);
+  }, [stages, activeTab, quickOnlineTime, quickOfflineTime, quickNumStages]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f3f4f6' }}>
@@ -361,7 +430,7 @@ const cyclesPerHour =
       </View>
 
       <KeyboardAwareScrollView style={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>Add Cycle Time Record</Text>
+          <Text style={styles.title}>{isEditing ? 'Edit' : 'Add'} Cycle Time Record</Text>
 
           {/* Team */}
           <View style={styles.inputGroup}>
@@ -395,6 +464,7 @@ const cyclesPerHour =
             />
           </View>
 
+          {/* Part Numbers */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Part Numbers</Text>
             {partNumbers.map((partNumberValue, index) => (
@@ -461,71 +531,139 @@ const cyclesPerHour =
             </TouchableOpacity>
           </View>
 
-          {stages.map((stage, index) => (
-            <View key={index} style={styles.stageContainer}>
-              <Text style={styles.stageTitle}>Stage {index + 1}</Text>
+          {/* TAB SWITCHER */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity 
+              style={[styles.tabButton, activeTab === 'detailed' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('detailed')}
+            >
+              <Text style={[styles.tabButtonText, activeTab === 'detailed' && styles.tabButtonTextActive]}>
+                Detailed Input
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('quick')}
+            >
+              <Text style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}>
+                Quick Input
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-              {/* Stage Description */}
+          {/* DETAILED TAB */}
+          {activeTab === 'detailed' && (
+            <>
+              {stages.map((stage, index) => (
+                <View key={index} style={styles.stageContainer}>
+                  <Text style={styles.stageTitle}>Stage {index + 1}</Text>
+
+                  {/* Stage Description */}
+                  <View style={styles.inputGroup}>
+                    <TextInput
+                      style={styles.input}
+                      value={stage.description}
+                      onChangeText={(value) => handleStageChange(index, value)}
+                      placeholder="Enter stage description"
+                      placeholderTextColor="#9ca3af"
+                    />
+                  </View>
+
+                  <View style={styles.countsRow}>
+                    {stage.counts.map((count, countIndex) => (
+                      <View key={countIndex} style={styles.countGroup}>
+                        <TextInput
+                          style={styles.input}
+                          value={count}
+                          onChangeText={(value) => handleCountChange(index, countIndex, value)}
+                          placeholder={`Count ${countIndex + 1}`}
+                          keyboardType="numeric"
+                          placeholderTextColor="#9ca3af"
+                        />
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* Action Row: Add/Delete Count (left) + Delete Stage (right) */}
+                  <View style={styles.countActionRow}>
+                    <View style={styles.leftActions}>
+                      <TouchableOpacity
+                        style={styles.addCountButton}
+                        onPress={() => handleAddCount(index)}
+                      >
+                        <Text style={styles.addButtonText}>Add Count </Text>
+                      </TouchableOpacity>
+
+                      {stage.counts.length > 1 && (
+                        <TouchableOpacity
+                          style={styles.deleteCountButton}
+                          onPress={() => handleDeleteLastCount(index)}
+                        >
+                          <Text style={styles.addButtonText}> Delete Count  </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {stages.length > 1 && (
+                      <TouchableOpacity
+                        style={styles.deleteStageButton}
+                        onPress={() => handleRemoveStage(index)}
+                      >
+                        <Text style={styles.addButtonText}>Delete Stage</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity style={styles.addStageButton} onPress={handleAddStage}>
+                <Text style={styles.submitButtonText}>Add Stage</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* QUICK TAB */}
+          {activeTab === 'quick' && (
+            <View style={styles.stageContainer}>
+              <Text style={styles.stageTitle}>Quick Entry</Text>
+              
               <View style={styles.inputGroup}>
+                <Text style={styles.label}>Number of Stages</Text>
                 <TextInput
                   style={styles.input}
-                  value={stage.description}
-                  onChangeText={(value) => handleStageChange(index, value)}
-                  placeholder="Enter stage description"
+                  value={quickNumStages}
+                  onChangeText={setQuickNumStages}
+                  placeholder="e.g. 5"
+                  keyboardType="number-pad"
                   placeholderTextColor="#9ca3af"
                 />
               </View>
 
-              <View style={styles.countsRow}>
-                {stage.counts.map((count, countIndex) => (
-                  <View key={countIndex} style={styles.countGroup}>
-                    <TextInput
-                      style={styles.input}
-                      value={count}
-                      onChangeText={(value) => handleCountChange(index, countIndex, value)}
-                      placeholder={`Count ${countIndex + 1}`}
-                      keyboardType="number-pad"
-                      placeholderTextColor="#9ca3af"
-                    />
-                  </View>
-                ))}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Online Time (Seconds)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={quickOnlineTime}
+                  onChangeText={setQuickOnlineTime}
+                  placeholder="e.g. 45"
+                  keyboardType="numeric"
+                  placeholderTextColor="#9ca3af"
+                />
               </View>
 
-              {/* Action Row: Add/Delete Count (left) + Delete Stage (right) */}
-              <View style={styles.countActionRow}>
-                <View style={styles.leftActions}>
-                  <TouchableOpacity
-                    style={styles.addCountButton}
-                    onPress={() => handleAddCount(index)}
-                  >
-                    <Text style={styles.addButtonText}>Add Count </Text>
-                  </TouchableOpacity>
-
-                  {stage.counts.length > 1 && (
-                    <TouchableOpacity
-                      style={styles.deleteCountButton}
-                      onPress={() => handleDeleteLastCount(index)}
-                    >
-                      <Text style={styles.addButtonText}> Delete Count  </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {stages.length > 1 && (
-                  <TouchableOpacity
-                    style={styles.deleteStageButton}
-                    onPress={() => handleRemoveStage(index)}
-                  >
-                    <Text style={styles.addButtonText}>Delete Stage</Text>
-                  </TouchableOpacity>
-                )}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Offline Time (Seconds)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={quickOfflineTime}
+                  onChangeText={setQuickOfflineTime}
+                  placeholder="e.g. 15"
+                  keyboardType="numeric"
+                  placeholderTextColor="#9ca3af"
+                />
               </View>
             </View>
-          ))}
-
-          <TouchableOpacity style={styles.addStageButton} onPress={handleAddStage}>
-            <Text style={styles.submitButtonText}>Add Stage</Text>
-          </TouchableOpacity>
+          )}
 
           {/* Submit + Clear All in same row */}
           <View style={styles.actionRow}>
@@ -803,6 +941,35 @@ const styles = StyleSheet.create({
   outputValue: {
     fontSize: 22,
     fontWeight: 'bold',
+    color: '#2563eb',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#e5e7eb',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  tabButtonActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  tabButtonTextActive: {
     color: '#2563eb',
   },
 });

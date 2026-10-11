@@ -85,8 +85,8 @@ export default function ProductionPlanScreen() {
   const [date, setDate] = useState(today);
   const [showDatePicker, setShowDatePicker] = useState(false);
   
-  // ✨ NEW: Added Time State & TimePicker State (defaults to 08:00)
-  const [time, setTime] = useState(new Date(new Date().setHours(9, 0, 0, 0)));
+  // ✨ DEFAULT TIME SET TO 08:30
+  const [time, setTime] = useState(new Date(new Date().setHours(8, 30, 0, 0)));
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   const [manpower, setManpower] = useState('');
@@ -176,9 +176,44 @@ export default function ProductionPlanScreen() {
       items: [] as any[],
     }));
 
-    let slotIdx = 0;
-    let slotMinsRem = SHIFT_SLOTS[0]?.minutes || 0;
-    let slotStartTime = SHIFT_SLOTS[0]?.start || '';
+    // ✨ Fetch the time from the time picker to calculate the exact starting slot and minute
+    const selectedTimeStr = time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+    let slotIdx = SHIFT_SLOTS.findIndex(s => s.end > selectedTimeStr);
+    if (slotIdx === -1) slotIdx = 0;
+
+    let slotStartTime = selectedTimeStr > SHIFT_SLOTS[slotIdx].start ? selectedTimeStr : SHIFT_SLOTS[slotIdx].start;
+
+    const timeToMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+
+    // Jump forward if the selected time falls precisely inside a break
+    if (SHIFT_SLOTS[slotIdx].break_start && SHIFT_SLOTS[slotIdx].break_end) {
+      const sM = timeToMins(slotStartTime);
+      const bsM = timeToMins(SHIFT_SLOTS[slotIdx].break_start as string);
+      const beM = timeToMins(SHIFT_SLOTS[slotIdx].break_end as string);
+      if (sM >= bsM && sM < beM) {
+        slotStartTime = SHIFT_SLOTS[slotIdx].break_end as string;
+      }
+    }
+
+    const getWorkingMinsBetween = (t1: string, t2: string, slot: any) => {
+      let m1 = timeToMins(t1);
+      let m2 = timeToMins(t2);
+      if (m2 < m1) m2 += 24 * 60; 
+      let diff = m2 - m1;
+
+      if (slot.break_start && slot.break_end) {
+        let b1 = timeToMins(slot.break_start);
+        let b2 = timeToMins(slot.break_end);
+        if (b2 < b1) b2 += 24 * 60;
+        const overlapStart = Math.max(m1, b1);
+        const overlapEnd = Math.min(m2, b2);
+        if (overlapEnd > overlapStart) diff -= (overlapEnd - overlapStart);
+      }
+      return Math.max(0, diff);
+    };
+
+    let slotMinsRem = getWorkingMinsBetween(slotStartTime, SHIFT_SLOTS[slotIdx].end, SHIFT_SLOTS[slotIdx]);
 
     models.forEach((mod) => {
       let remainingTarget = parseInt(mod.target || '0', 10);
@@ -212,7 +247,6 @@ export default function ProductionPlanScreen() {
 
         // CROSS-BREAK LOGIC: If the time taken crosses over the break, we extend the itemEndTime
         if (slot.break_start && slot.break_end) {
-          const timeToMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
           const startM = timeToMins(itemStartTime);
           const endM = timeToMins(itemEndTime);
           const breakStartM = timeToMins(slot.break_start);
@@ -273,7 +307,7 @@ export default function ProductionPlanScreen() {
     });
 
     return plans.filter(p => p.items.length > 0);
-  }, [models, manpower]);
+  }, [models, manpower, time]);
 
   const getEstimatedTimeLabel = (target: string, uph: number | null, stages: number | null) => {
     const t = Number(target || 0);
@@ -292,13 +326,10 @@ export default function ProductionPlanScreen() {
       return;
     }
 
-    // ✨ Get the selected hour from the TimePicker (e.g. if they pick 08:30, it gets 8)
-    const startHour = time.getHours();
-
     const payload: ProductionRecordInsert[] = hourlyPlan.map(slot => ({
       date: date,
-      // ✨ Sets the hour progressively from the user's selected start time
-      hour: (startHour + (slot.hour - 1)) % 24, 
+      // ✨ Accurately grabs the exact hour directly from the matching slot's starting time (e.g. '08:30' saves as 8)
+      hour: parseInt(slot.end.split(':')[0], 10), 
       manpower: parseInt(manpower, 10),
       target_units: slot.totalTarget,
       units_produced: 0,
@@ -365,7 +396,7 @@ export default function ProductionPlanScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* ✨ NEW: Start Time Picker */}
+              {/* ✨ Start Time Picker */}
               <View style={styles.formGroupRow}>
                 <Text style={styles.label}>Start Time</Text>
                 <TouchableOpacity style={styles.input} onPress={() => setShowTimePicker(true)}>
@@ -398,7 +429,7 @@ export default function ProductionPlanScreen() {
             />
           )}
 
-          {/* ✨ NEW: DateTimePicker for Time */}
+          {/* ✨ DateTimePicker for Time */}
           {showTimePicker && (
             <DateTimePicker
               value={time}

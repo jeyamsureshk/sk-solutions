@@ -7,7 +7,7 @@ import {
   TextInput, 
   StyleSheet, 
   Alert, 
-  Platform 
+  Platform ,
 } from 'react-native';
 import { 
   BarChart3, 
@@ -17,8 +17,13 @@ import {
   Mail, 
   Timer, 
   BookOpen, 
-  Lock,ScanLine,
-  MessageSquare // Added for the new messages tab
+  Lock,
+  ScanLine,
+  MessageSquare,
+  ClipboardList, // ✨ New
+  CalendarPlus,  // ✨ New
+  TrendingUp,     // ✨ New
+AlertTriangle
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
@@ -123,16 +128,20 @@ export default function TabLayout() {
             headerRight: () => (
               <View style={{ flexDirection: 'row', marginRight: 16 }}>
                 <TouchableOpacity onPress={() => router.push('/ProductionPlan')} style={styles.headerBtn}>
-                  <Text style={styles.headerBtnText}>+ Plan</Text>
+                  <ClipboardList size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Text style={styles.headerBtnText}>Plan</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/add-production-day')} style={styles.headerBtn}>
-                  <Text style={styles.headerBtnText}>+ Day Entry </Text>
+                  <CalendarPlus size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Text style={styles.headerBtnText}>Day</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/cycle-time')} style={styles.headerBtn}>
-                  <Text style={styles.headerBtnText}>+ Cycle Time </Text>
+                  <Timer size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Text style={styles.headerBtnText}>Cycle Time</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/add-yield')}>
-                  <Text style={styles.headerBtnText}>+ Yield </Text>
+                <TouchableOpacity onPress={() => router.push('/add-yield')} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <AlertTriangle size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={styles.headerBtnText}>Defects</Text>
                 </TouchableOpacity>
               </View>
             ),
@@ -148,12 +157,12 @@ export default function TabLayout() {
             headerRight: () => (
               <View style={{ flexDirection: 'row', marginRight: 16 }}>
                 <TouchableOpacity onPress={() => router.push('/cycletimerecords')} style={styles.headerBtn}>
-                  <Timer size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Timer size={20} color="#ffffff" style={{ marginRight: 6 }} />
                   <Text style={styles.headerBtnText}>Cycle Time </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/yield')} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <FileText size={18} color="#ffffff" style={{ marginRight: 6 }} />
-                  <Text style={styles.headerBtnText}>Yield </Text>
+                  <AlertTriangle size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Text style={styles.headerBtnText}>Defects </Text>
                 </TouchableOpacity>
               </View>
             ),
