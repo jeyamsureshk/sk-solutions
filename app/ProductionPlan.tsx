@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Trash2, CheckCheck } from 'lucide-react-native';
+import { Trash2, CheckCheck,Bookmark, Check } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useItems, type Item } from '@/hooks/useItems';
 import { useCycleTime } from '@/hooks/useCycleTime';
@@ -242,8 +242,14 @@ export default function ProductionPlanScreen() {
           timeTaken = (qtyToAssign / effUph) * 60;
         }
 
-        const itemStartTime = slotStartTime;
+const itemStartTime = slotStartTime;
         let itemEndTime = addMinutesToTime(itemStartTime, timeTaken);
+
+        // ✨ SNAP LOGIC: If the calculated end time is within 2 minutes of the slot's actual end time, snap it to the slot end time (e.g. 11:59 -> 12:00)
+        const diffToEndOfSlot = getWorkingMinsBetween(itemEndTime, slot.end, slot);
+        if (diffToEndOfSlot > 0 && diffToEndOfSlot <= 2) {
+          itemEndTime = slot.end;
+        }
 
         // CROSS-BREAK LOGIC: If the time taken crosses over the break, we extend the itemEndTime
         if (slot.break_start && slot.break_end) {
@@ -255,6 +261,12 @@ export default function ProductionPlanScreen() {
             const workBeforeBreak = breakStartM - startM;
             const remainingWorkAfterBreak = timeTaken - workBeforeBreak;
             itemEndTime = addMinutesToTime(slot.break_end, remainingWorkAfterBreak);
+            
+            // Re-apply snap logic after break adjustment
+            const diffAfterBreak = getWorkingMinsBetween(itemEndTime, slot.end, slot);
+            if (diffAfterBreak > 0 && diffAfterBreak <= 2) {
+              itemEndTime = slot.end;
+            }
           }
         }
 
@@ -448,10 +460,11 @@ export default function ProductionPlanScreen() {
             
             return (
             <View key={index} style={[styles.card, { borderLeftWidth: 2, borderLeftColor: modelColor }]}>
-              <View style={styles.modelRow}>
+<View style={styles.modelRow}>
                 <View style={{ flex: 2.5, marginRight: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelColor, marginRight: 6 }} />
+                    {/* ✨ Replaced the dot View with a filled Bookmark icon */}
+                    <Bookmark size={14} fill={modelColor} color={modelColor} style={{ marginRight: 6 }} />
                     <Text style={[styles.label, { marginBottom: 0 }]}>Model Search</Text>
                   </View>
                   <TextInput
@@ -498,11 +511,12 @@ export default function ProductionPlanScreen() {
                   />
                 </View>
 
-                <View style={{ flex: 1 }}>
+<View style={{ flex: 1 }}>
                   <Text style={styles.label}>Target</Text>
                   <View style={{ position: 'relative' }}>
                     <TextInput
-                      style={[styles.input, { paddingBottom: 18, textAlign: 'center' }]}
+                      // ✨ Tweaked paddingTop and paddingBottom to nudge the text slightly upward while keeping the box the exact same height
+                      style={[styles.input, { textAlign: 'center', paddingTop: 5, paddingBottom: 15 }]} 
                       value={modelItem.target}
                       onChangeText={(text) => {
                         const newModels = [...models];
@@ -582,7 +596,9 @@ export default function ProductionPlanScreen() {
                     
                     return (
                     <View key={j} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 2 }}>
-                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: itemColor, marginRight: 6 }} />
+                      {/* ✨ Replaced the dot with a small filled Bookmark icon */}
+                      <Bookmark size={10} fill={itemColor} color={itemColor} style={{ marginRight: 6 }} />
+                      
                       <Text style={[styles.slotDetail, { marginVertical: 0, fontWeight: '600' }]}>
                         {item.model} | Qty: {item.target} | {item.start_time} - {item.end_time}
                       </Text>
@@ -590,7 +606,7 @@ export default function ProductionPlanScreen() {
                       {/* WhatsApp style double tick */}
                       {item.isLast && (
                         <View style={{ marginLeft: 4, marginTop: 2 }}>
-                          <CheckCheck size={15} color="#34B7F1" strokeWidth={2.5} />
+                          <Check size={15} color="#34B7F1" strokeWidth={2.5} />
                         </View>
                       )}
                     </View>
@@ -649,7 +665,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#374151',
   },
-  estimatedTimeText: { position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: '#2563eb', fontWeight: 'bold' },
+  estimatedTimeText: { position: 'absolute', bottom: 3, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: '#2563eb', fontWeight: 'bold' },
   addButton: { backgroundColor: '#e0e7ff', padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 20 },
   addButtonText: { color: '#4f46e5', fontWeight: '700', fontSize: 15 },
   removeButton: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8 },
@@ -663,7 +679,8 @@ const styles = StyleSheet.create({
   actionContainer: { flexDirection: 'row', gap: 12 },
   saveButton: { flex: 2, backgroundColor: '#2563eb', padding: 14, borderRadius: 8, alignItems: 'center' },
   saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  clearButton: { flex: 1, backgroundColor: '#fef2f2', padding: 14, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5' },
+  clearButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  clearButton: { flex: 1, backgroundColor: '#fe6969', padding: 14, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5' },
   // 🚀 New Sticky Header Styles
   stickyTimeHeader: {
     flexDirection: 'row',

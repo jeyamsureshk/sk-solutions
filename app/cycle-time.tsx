@@ -223,7 +223,7 @@ export default function CycleTimeScreen() {
         ? oneManpowerOutput * stages.length
         : 0;
 
-        } else {
+} else {
       // ✨ QUICK TAB SUBMISSION
       const online = parseFloat(quickOnlineTime) || 0;
       const offline = parseFloat(quickOfflineTime) || 0;
@@ -236,11 +236,14 @@ export default function CycleTimeScreen() {
         return;
       }
 
-      stagesData.push({
-        description: 'Quick Data',
-        counts: [quickOnlineTime, quickOfflineTime, String(numStages)],
-        average: sumSeconds
-      });
+      // ✨ Loop to create exact number of stages instead of a single "Quick Data" stage
+      for (let i = 1; i <= numStages; i++) {
+        stagesData.push({
+          description: `Stage ${i} (Quick Input)`,
+          counts: [String(sumSeconds)], // Saving the sum so Detailed Tab math works if edited later
+          average: sumSeconds
+        });
+      }
 
       overallAvg = sumSeconds;
       

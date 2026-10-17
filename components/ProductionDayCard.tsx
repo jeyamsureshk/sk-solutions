@@ -601,7 +601,7 @@ const renderRemarksAndMetrics = (record: ProductionRecord) => {
                               {/* ✨ Tick mark absolutely positioned so it doesn't push the text off-center */}
                               {showTick && (
                                 <View style={{ position: 'absolute', right: -5 }}>
-                                  <Check size={14} color="#059669" strokeWidth={3} />
+                                  <Check size={13} color="#34B7F1" strokeWidth={3} />
                                 </View>
                               )}
                             </View>

@@ -14,7 +14,7 @@ import {
   StatusBar,
   Easing,
   Keyboard,
-  ImageBackground, // Added ImageBackground
+  ImageBackground,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -39,11 +39,34 @@ const formatDate = (dateStr: string) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined });
 };
 
+const formatLastSeen = (dateStr: string | null, now: Date) => {
+  if (!dateStr) return 'Offline';
+  
+  const date = new Date(dateStr);
+  
+  const isToday = date.getDate() === now.getDate() && 
+                  date.getMonth() === now.getMonth() && 
+                  date.getFullYear() === now.getFullYear();
+                  
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.getDate() === yesterday.getDate() && 
+                      date.getMonth() === yesterday.getMonth() && 
+                      date.getFullYear() === yesterday.getFullYear();
+                      
+  const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  
+  if (isToday) return `last seen today at ${timeStr}`;
+  if (isYesterday) return `last seen yesterday at ${timeStr}`;
+  
+  return `last seen ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at ${timeStr}`;
+};
+
 type DateSeparator = { type: 'date'; date: string };
 type ListItem = Message | DateSeparator;
 
 interface BackgroundOption {
-  type: 'solid' | 'gradient' | 'custom' | 'doodle'; // Added doodle type
+  type: 'solid' | 'gradient' | 'custom' | 'doodle';
   color?: string;
   colors?: string[];
 }
@@ -51,7 +74,6 @@ interface BackgroundOption {
 const getChatCacheKey = (userId: string, partnerId: string) =>
   `messages:chat:${[userId, partnerId].sort().join(':')}`;
 
-// WhatsApp classic doodle pattern (Transparent PNG)
 const WA_DOODLE_URL = 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png';
 
 export default function ChatScreen() {
@@ -65,7 +87,12 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
-  // Set default background to the WhatsApp doodle
+  const [isOnline, setIsOnline] = useState(false);
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
+  
+  // Ticking state for live relative time
+  const [now, setNow] = useState(new Date());
+  
   const [background, setBackground] = useState<BackgroundOption>({ 
     type: 'doodle' 
   });
@@ -81,6 +108,14 @@ export default function ChatScreen() {
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Update the 'now' state every minute
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 60000); // 1 minute
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener(
@@ -162,6 +197,67 @@ export default function ChatScreen() {
     loadBackground();
   }, []);
 
+  useEffect(() => {
+    if (!currentUserId || !partnerId) return;
+
+    const updateMyPresence = async () => {
+      await supabase
+        .from('profiles')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', currentUserId);
+    };
+
+    const checkPartnerPresence = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('last_seen')
+        .eq('id', partnerId)
+        .single();
+
+      if (data?.last_seen) {
+        setLastSeen(data.last_seen);
+        const diff = Date.now() - new Date(data.last_seen).getTime();
+        setIsOnline(diff <= 75000); // 1 min 15 secs network buffer
+      } else {
+        setIsOnline(false);
+        setLastSeen(null);
+      }
+    };
+
+    updateMyPresence();
+    checkPartnerPresence();
+
+    const myPresenceInterval = setInterval(updateMyPresence, 60000); // Check and update every 1 minute
+    const partnerPresenceInterval = setInterval(checkPartnerPresence, 30000);
+
+    // FIX FOR CRASH: Ensure channel name is unique and old ones are cleaned up first
+    const presenceChannelName = `presence-${partnerId}`;
+    const existingPresenceChannel = supabase.getChannels().find(c => c.topic === `realtime:${presenceChannelName}`);
+    if (existingPresenceChannel) {
+      supabase.removeChannel(existingPresenceChannel);
+    }
+
+    const profileChannel = supabase
+      .channel(presenceChannelName)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${partnerId}` },
+        (payload) => {
+          if (payload.new && payload.new.last_seen) {
+            setLastSeen(payload.new.last_seen);
+            const diff = Date.now() - new Date(payload.new.last_seen).getTime();
+            setIsOnline(diff <= 75000); // 1 min 15 secs network buffer
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(myPresenceInterval);
+      clearInterval(partnerPresenceInterval);
+      supabase.removeChannel(profileChannel);
+    };
+  }, [currentUserId, partnerId]);
   useEffect(() => {
     let isActive = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -313,6 +409,8 @@ export default function ChatScreen() {
 
     playSound(sendSound);
 
+    await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUserId);
+
     const { error } = await supabase.from('messages').insert(optimistic as MessageInsert);
     if (error) {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
@@ -367,7 +465,6 @@ export default function ChatScreen() {
     const isSelected = selectedIds.includes(item.id);
     if (!animMap.current[item.id]) animMap.current[item.id] = new Animated.Value(1);
 
-    // WhatsApp exact bubble colors
     const backgroundColor = isSelected 
       ? 'rgba(252, 165, 165, 0.8)' 
       : isMine 
@@ -399,7 +496,7 @@ export default function ChatScreen() {
                 </Text>
                 {isMine && (
                   <Ionicons
-                    name={item.read ? 'checkmark-done' : 'checkmark'} // Switched to WhatsApp style checkmarks
+                    name={item.read ? 'checkmark-done' : 'checkmark'}
                     size={15}
                     color={item.read ? '#53bdeb' : '#8696a0'}
                     style={{ marginLeft: 2 }}
@@ -422,7 +519,6 @@ export default function ChatScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      {/* Background Rendering Logic */}
       {background.type === 'doodle' ? (
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#efe7de' }]}>
           <ImageBackground 
@@ -450,7 +546,7 @@ export default function ChatScreen() {
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>{partnerName}</Text>
-            <Text style={styles.headerSubtitle}>online</Text>
+            <Text style={styles.headerSubtitle}>{isOnline ? 'Online' : formatLastSeen(lastSeen, now)}</Text>
           </View>
           {selectedIds.length > 0 ? (
             <TouchableOpacity onPress={handleDeleteSelected} style={styles.headerButton}>
@@ -494,7 +590,6 @@ export default function ChatScreen() {
           keyboardDismissMode="interactive"
         />
 
-        {/* WhatsApp Style Input Container */}
         <View
           style={[
             styles.inputContainer,
@@ -635,9 +730,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 10,
   },
-  dateSeparator: {
+dateSeparator: {
     alignSelf: 'center',
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,1)',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -651,7 +746,7 @@ const styles = StyleSheet.create({
   dateSeparatorText: {
     color: '#54656f',
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
   // Messages (WhatsApp Style)
@@ -677,7 +772,6 @@ const styles = StyleSheet.create({
     shadowRadius: 1,
     elevation: 1,
   },
-  // Creates the classic WhatsApp sharp corner tail effect
   bubbleLeft: {
     borderTopLeftRadius: 0, 
     marginLeft: 5,
@@ -725,7 +819,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     minHeight: 45,
     maxHeight: 120,
-    marginRight: 8, // Space between input and send button
+    marginRight: 8,
     paddingHorizontal: 12,
     paddingVertical: 5,
     shadowColor: "#000",

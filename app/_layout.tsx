@@ -1,13 +1,16 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 export default function RootLayout() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const segments = useSegments();
   const router = useRouter();
+  
+  // NEW: Ref to track the current state of the app (background/foreground)
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     // 1. Check for active session. Supabase handles reading the cached token automatically.
@@ -22,6 +25,50 @@ export default function RootLayout() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // NEW: Global Presence Tracker
+  // This will automatically update the user's last_seen whenever they are logged in 
+  // and the app is active, without needing to track individual database queries.
+  useEffect(() => {
+    // Only track presence if the user is actually signed in
+    if (!isAuthenticated) return;
+
+    const updateLastSeen = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase
+        .from('profiles')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', user.id);
+    };
+
+    // Update immediately upon successful login/load
+    updateLastSeen();
+
+    // Listen for the app coming back from the background
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        updateLastSeen();
+      }
+      appState.current = nextAppState;
+    });
+
+    // Keep updating every 1 minute as long as the app stays open on the screen
+    const interval = setInterval(() => {
+      if (appState.current === 'active') {
+        updateLastSeen();
+      }
+    }, 60000); 
+
+    return () => {
+      subscription.remove();
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated === null) return;

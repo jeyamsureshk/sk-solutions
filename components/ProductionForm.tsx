@@ -83,7 +83,6 @@ const addMinutesToTime = (time: string, minutes: number) => {
 };
 
 // Automatic model timing using Effective UPH
-// Automatic model timing using Effective UPH
 const recalculateModelTimes = (modelList: ModelEntry[], currentManpower: string | number) => {
   const updated = [...modelList];
 
@@ -98,32 +97,17 @@ const recalculateModelTimes = (modelList: ModelEntry[], currentManpower: string 
         ? current.start_time || ''
         : updated[index - 1].end_time || current.start_time || '';
 
-    const targetQty = Number(current.target || 0);
-    const actualQty = Number(current.quantity || 0);
-    const effectiveUph = getEffectiveUph(current.uph, current.stages, currentManpower);
-
-    const durationMinutes =
-      effectiveUph > 0 && actualQty > 0
-        ? (actualQty / effectiveUph) * 60
-        : effectiveUph > 0 && targetQty > 0
-          ? (targetQty / effectiveUph) * 60
-          : 0;
-
-    const calculatedEndTime =
-      startTime && durationMinutes > 0
-        ? addMinutesToTime(startTime, durationMinutes)
-        : startTime;
-
     updated[index] = {
       ...current,
       start_time: startTime,
-      // If manually overridden, use the manual end time. Otherwise, auto-calculate.
-      end_time: current.manual_end ? (current.end_time || '') : calculatedEndTime,
+      // Removed automatic end_time calculation to prevent it from changing automatically
+      end_time: current.end_time || '',
     };
   }
 
   return updated;
 };
+
 // Gets suggested target based on remaining minutes in the hour
 const getSuggestedTarget = (
   currentIndex: number,
@@ -281,7 +265,7 @@ export default function ProductionForm({
       unplanned += mins;
     }
 
-    if (lower.includes("fault") || lower.includes("damage")) {
+    if (lower.includes("fault") || lower.includes("damage") || lower.includes("defect")) {
       const qty = Number(line.match(/\d+/)?.[0]) || 0;
       defects += qty;
     }
@@ -641,7 +625,7 @@ const actualEstimatedMinutes =
     }
   };
 
-  const fetchUphForPartNumber = async (partNumber: string, index: number) => {
+const fetchUphForPartNumber = async (partNumber: string, index: number) => {
     const trimmedPartNumber = partNumber?.trim();
     if (!trimmedPartNumber) {
       return;
@@ -697,14 +681,14 @@ const actualEstimatedMinutes =
         }
       }
 
-      if (fetchedManpower !== null && fetchedManpower > 0) {
-        setManpower(fetchedManpower.toString());
-      }
+      // REMOVED: setManpower(...) auto-fetch override here
 
       setModels((currentModels) => {
         const updated = [...currentModels];
         const stagesCount = fetchedManpower && fetchedManpower > 0 ? fetchedManpower : 1;
-        const currentManpower = fetchedManpower !== null && fetchedManpower > 0 ? fetchedManpower.toString() : (manpower || "1");
+        
+        // MODIFIED: strictly use the form's current manpower state, not the fetched one
+        const currentManpower = manpower || "1";
 
         let calcTarget = updated[index].target;
         if (!calcTarget) {
@@ -731,6 +715,26 @@ const actualEstimatedMinutes =
         )
       );
     }
+  };
+
+  const getModelTimePickerDate = () => {
+    if (!modelTimePickerState) return new Date();
+    
+    // Check if there is already a time populated for this field
+    const currentVal = models[modelTimePickerState.index]?.[modelTimePickerState.field];
+    const date = new Date();
+    
+    if (currentVal && currentVal.includes(':')) {
+      const [h, m] = currentVal.split(':');
+      date.setHours(parseInt(h, 10), parseInt(m, 10), 0, 0);
+    } else {
+      // Fallback to the main hour you chose at the top of the form
+      const h = parseInt(hour.split('.')[0] || '0', 10);
+      const m = hour.includes('.5') ? 30 : 0;
+      date.setHours(h, m, 0, 0);
+    }
+    
+    return date;
   };
 
   return (
@@ -784,7 +788,7 @@ const actualEstimatedMinutes =
 
           {modelTimePickerState && (
   <DateTimePicker
-    value={new Date()}
+    value={getModelTimePickerDate()}
     mode="time"
     display="default"
     onValueChange={onModelTimeChange}
@@ -992,11 +996,12 @@ const actualEstimatedMinutes =
               <Text style={styles.addButtonText}>Add Model</Text>
             </TouchableOpacity>
           </View>
+         {/* Manpower, Target, Produced Row */}
           <View style={styles.row}>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Manpower</Text>
               <TextInput 
-                style={styles.input} 
+                style={[styles.input, { height: 48 }]} 
                 value={manpower} 
                 onChangeText={handleManpowerChange} 
                 keyboardType="number-pad" 
@@ -1010,7 +1015,7 @@ const actualEstimatedMinutes =
                   styles.input,
                   {
                     backgroundColor: '#fff',
-                    height: 43,
+                    height: 48, // Normalized height
                     flexDirection: 'row', 
                     justifyContent: 'center',
                     alignItems: 'center', 
@@ -1019,23 +1024,10 @@ const actualEstimatedMinutes =
                   },
                 ]}
               >
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: '700',
-                    color: '#1f1f1f',
-                  }}
-                >
+                <Text style={{ fontSize: 18, fontWeight: '700', color: '#1f1f1f' }}>
                   {targetUnits || 0}
                 </Text>
-
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: '700',
-                    color: '#2563eb', 
-                  }}
-                >
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#2563eb' }}>
                   {getTotalEstimatedTargetTime() || '0 min'}
                 </Text>
               </View>
@@ -1047,7 +1039,7 @@ const actualEstimatedMinutes =
                   styles.input,
                   {
                     backgroundColor: '#fff',
-                    height: 43,
+                    height: 48, // Normalized height
                     flexDirection: 'row', 
                     justifyContent: 'center',
                     alignItems: 'center',
@@ -1056,42 +1048,47 @@ const actualEstimatedMinutes =
                   },
                 ]}
               >
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: '700',
-                    color: '#1f1f1f',
-                  }}
-                >
+                <Text style={{ fontSize: 18, fontWeight: '700', color: '#1f1f1f' }}>
                   {models.reduce((sum, item) => sum + (item.quantity || 0), 0)}
                 </Text>
-
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: '700',
-                    color: '#10B981', 
-                  }}
-                >
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#10B981' }}>
                   {getTotalActualEstimatedTime()}
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* Downtime & Defects */}
+          {/* Downtime & Defects Row */}
           <View style={styles.row}>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Plan DT</Text>
-              <TextInput style={styles.input} value={planDt} onChangeText={setPlanDt} keyboardType="numeric" placeholder="Minutes"/>
+              <TextInput 
+                style={[styles.input, { height: 48 }]} 
+                value={planDt} 
+                onChangeText={setPlanDt} 
+                keyboardType="numeric" 
+                placeholder="Minutes"
+              />
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Unplan DT</Text>
-              <TextInput style={styles.input} value={unplanDt} onChangeText={setUnplanDt} keyboardType="numeric" placeholder="Minutes"/>
+              <TextInput 
+                style={[styles.input, { height: 48 }]} 
+                value={unplanDt} 
+                onChangeText={setUnplanDt} 
+                keyboardType="numeric" 
+                placeholder="Minutes"
+              />
             </View>
             <View style={styles.formGroupRow}>
               <Text style={styles.label}>Defect Qty</Text>
-              <TextInput style={styles.input} value={defectQty} onChangeText={setDefectQty} keyboardType="number-pad" placeholder="Qty"/>
+              <TextInput 
+                style={[styles.input, { height: 48 }]} 
+                value={defectQty} 
+                onChangeText={setDefectQty} 
+                keyboardType="number-pad" 
+                placeholder="Qty"
+              />
             </View>
           </View>
 
